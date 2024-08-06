@@ -1,58 +1,60 @@
-.TH TEXTSELECT 1 "August 2024" "1.0" "Text Selection Tool"
+.TH TEXTSELECT 1 "August 2024" "1.0" "Text Selection Utility"
 .SH NAME
-textselect \- A command-line tool to mark and select lines from a text file using ncurses.
+textselect \- interactively select lines from a text file and optionally execute a command with the selected lines
 
 .SH SYNOPSIS
 .B textselect
-[\-v]
-.IR file
+.RI [ options ] " <input> [command [args...]]"
 
 .SH DESCRIPTION
 .B textselect
-is a command-line tool that allows users to interactively mark and select lines from a text file using ncurses. It displays the contents of a file, enables navigation through the lines, and allows lines to be marked. On exit, it prints the selected lines to the standard output.
+is a utility that allows users to interactively select lines from a text file using an ncurses interface. The selected lines can then be saved to an output file or passed as input to another command.
 
 .SH OPTIONS
 .TP
+.B \-h
+Display usage information and exit.
+.TP
 .B \-v
-Invert the selection mode. When this option is used, lines that are not marked will be printed upon exit.
+Invert the selection of lines (selected lines become unselected and vice versa).
+.TP
+.B \-o \fIoutput\fP
+Specify an output file to save the selected lines. If not specified, the selected lines are printed to stdout.
 
 .SH USAGE
-Navigate through the file using the arrow keys. Mark or unmark a line by pressing the spacebar. Exit the program by pressing 'q'.
+The program reads the input file line by line, displaying the lines in a scrollable ncurses window. Users can navigate through the lines and select or deselect lines using the keyboard.
 
-The program reads the specified file and displays its contents in an ncurses window. The following keys are used for navigation and selection:
+Navigation and selection keys:
 .TP
-.UP
-Move the cursor up by one line.
+.B KEY_UP
+Move the cursor up.
 .TP
-.DOWN
-Move the cursor down by one line.
+.B KEY_DOWN
+Move the cursor down.
 .TP
-.SPACE
-Toggle the mark on the current line.
+.B v
+Invert the selection of lines.
 .TP
-.q
-Exit the program and print the marked lines.
+.B SPACE
+Select or deselect the current line.
+.TP
+.B q
+Quit the selection interface.
+
+If a command and its arguments are specified, the selected lines are passed as input to the command. Otherwise, the selected lines are saved to the specified output file or printed to stdout.
 
 .SH EXAMPLES
 .TP
-Select lines from a file:
+Select lines from "input.txt" and save them to "output.txt":
 .B
-textselect myfile.txt
+textselect \-o output.txt input.txt
 .TP
-Invert the selection:
+Select lines from "input.txt" and pass them as input to the "sort" command:
 .B
-textselect \-v myfile.txt
+textselect input.txt sort
 
 .SH AUTHOR
-Written by [Your Name].
-
-.SH REPORTING BUGS
-Report bugs to <your_email@example.com>.
+Written by Your Name.
 
 .SH COPYRIGHT
-This is free software: you are free to change and redistribute it. There is NO WARRANTY, to the extent permitted by law.
-
-.SH SEE ALSO
-.BR ncurses (3X),
-.BR vi (1),
-.BR less (1)
+This is free software; see the source for copying conditions. There is NO warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.

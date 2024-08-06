@@ -153,7 +153,7 @@ void output_chosen_lines(char *filename) {
  * @param exitcode Exit code.
  */
 NORETURN void usage(int exitcode) {
-    fprintf(stderr, "Usage: %s [-hv] [-o output] <input>\n", argv0);
+    fprintf(stderr, "Usage: %s [-hv] [-o output] <input> [command ...]\n", argv0);
     exit(exitcode);
 }
 
