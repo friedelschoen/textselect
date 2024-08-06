@@ -1,98 +1,67 @@
 # textselect
 
-`textselect` is a command-line utility for interactively selecting lines from a text file using an ncurses interface. Selected lines can be saved to a file or passed as arguments to a command.
+`textselect` is a command-line utility that allows users to interactively select lines from a text file and optionally execute a command with the selected lines. This can be particularly useful for filtering input before processing it with other tools or scripts.
 
 ## Features
 
-- **Interactive Selection**: Navigate through lines of a text file and select or deselect lines using an ncurses interface.
-- **Customizable Output**: Save selected lines to a file or pass them as arguments to another command.
-- **Invert Selection**: Toggle the inversion of selection to easily change which lines are selected.
-- **Use with `xargs`**: Pass selected lines as arguments to a command.
+- Interactively select lines from a text file using a curses-based interface.
+- Save selected lines to an output file.
+- Execute commands with the selected lines as arguments.
+- Flexible options for command execution, including passing selected lines as arguments, replacing placeholders in commands, or executing commands for each selected line.
 
 ## Installation
 
-To build and install `textselect`, follow these steps:
+To build `textselect` from source, you'll need a C compiler and the `ncurses` library. Clone the repository and run the following commands:
 
-1. **Clone the Repository**:
-
-    ```sh
-    git clone https://github.com/friedelschoen/textselect
-    cd textselect
-    ```
-
-2. **Compile the Program**:
-
-    ```sh
-    make
-    ```
-
-3. **Install the Program** (optional):
-
-    ```sh
-    sudo make install
-    ```
+```sh
+git clone https://github.com/friedelschoen/textselect.git
+cd textselect
+make
+```
 
 ## Usage
 
 ```sh
-textselect [-hvx] [-o output] <input> [command [args...]]
+textselect [-hvxil] [-o output] <input> [command [args...]]
 ```
 
 ### Options
 
-- `-h`  
-  Display help information and exit.
-
-- `-v`  
-  Invert the selection of lines.
-
-- `-x`  
-  Pass the selected lines as arguments to the specified command.
-
-- `-o output`  
-  Specify an output file to save the selected lines. If not specified, the selected lines are printed to stdout.
+- `-h`: Display the help message and exit.
+- `-v`: Invert the selection of lines.
+- `-x`: Call command with selected lines as arguments (mutually exclusive with `-i` and `-l`).
+- `-i`: Replace occurrences of `{}` in the command with each selected line, one at a time (mutually exclusive with `-x` and `-l`).
+- `-l`: Execute the command once for each selected line (mutually exclusive with `-x` and `-i`).
+- `-o output`: Specify an output file to save the selected lines.
 
 ### Navigation and Selection Keys
 
-- `UP`, `LEFT`  
-  Move the cursor up.
-
-- `DOWN`, `RIGHT`  
-  Move the cursor down.
-
-- `v`  
-  Invert the selection of lines.
-
-- `SPACE`  
-  Select or deselect the current line.
-
-- `ENTER`, `q`  
-  Quit the selection interface.
+- `UP, LEFT`: Move the cursor up.
+- `DOWN, RIGHT`: Move the cursor down.
+- `v`: Invert the selection of lines.
+- `SPACE`: Select or deselect the current line.
+- `ENTER, q`: Quit the selection interface.
 
 ### Examples
 
-- **Select lines from `input.txt` and save them to `output.txt`**:
+```sh
+# Interactively select lines from input.txt and save the selected lines to output.txt
+textselect -o output.txt input.txt
 
-    ```sh
-    textselect -o output.txt input.txt
-    ```
+# Interactively select lines from input.txt and pass the selected lines as arguments to the sort command
+textselect input.txt sort
 
-- **Select lines from `input.txt` and pass them as arguments to the `sort` command**:
+# Interactively select lines from input.txt and execute the echo command for each selected line, replacing {} with the selected line
+textselect -i input.txt echo {}
 
-    ```sh
-    textselect input.txt sort
-    ```
-
-- **Select lines from `input.txt` and pass them as arguments to a command using `xargs`**:
-
-    ```sh
-    textselect -x input.txt ls
-    ```
-
-## Contributing
-
-Contributions are welcome! Please open an issue or submit a pull request with any improvements or fixes.
+# Interactively select lines from input.txt and execute the echo command for each selected line
+textselect -l input.txt echo
+```
 
 ## License
 
-`textselect` is licensed under the Zlib License. See the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+
+## Contributing
+
+Contributions are welcome! Please open an issue or submit a pull request on GitHub.

@@ -1,38 +1,40 @@
-.TH TEXTSELECT 1 "August 2024" "1.0" "Text Selection Utility"
+.TH textselect 1 "2024-08-07" "textselect 0.1" "User Commands"
 .SH NAME
-textselect \- interactively select lines from a text file and optionally execute a command with the selected lines
-
+textselect \- Interactively select lines from a text file and optionally execute a command with the selected lines.
 .SH SYNOPSIS
 .B textselect
-.RI [ options ] " <input> [command [args...]]"
-
+.RB [ \-hvx ] 
+.RB [ \-o \ output ]
+.I input
+.I [command [args...]]
 .SH DESCRIPTION
 .B textselect
-is a utility that allows users to interactively select lines from a text file using an ncurses interface. The selected lines can then be saved to an output file or passed as input to another command.
-
+allows users to interactively select lines from a text file. The selected lines can be saved to an output file or passed to a command for execution.
 .SH OPTIONS
 .TP
 .B \-h
-Display usage information and exit.
+Display this help message and exit.
 .TP
 .B \-v
 Invert the selection of lines.
 .TP
 .B \-x
-Call command with lines as arguments.
+Call command with selected lines as arguments (mutually exclusive with \-i and \-l).
 .TP
-.B \-o \fIoutput\fP
-Specify an output file to save the selected lines. If not specified, the selected lines are printed to stdout.
-
-.SH USAGE
-The program reads the input file line by line, displaying the lines in a scrollable ncurses window. Users can navigate through the lines and select or deselect lines using the keyboard.
-
-Navigation and selection keys:
+.B \-i
+Replace occurrences of \fB{}\fR in the command with each selected line, one at a time (mutually exclusive with \-x and \-l).
 .TP
-.B KEY_UP
+.B \-l
+Execute the command once for each selected line (mutually exclusive with \-x and \-i).
+.TP
+.B \-o \fIoutput\fR
+Specify an output file to save the selected lines.
+.SH NAVIGATION AND SELECTION KEYS
+.TP
+.B UP, LEFT
 Move the cursor up.
 .TP
-.B KEY_DOWN
+.B DOWN, RIGHT
 Move the cursor down.
 .TP
 .B v
@@ -41,20 +43,26 @@ Invert the selection of lines.
 .B SPACE
 Select or deselect the current line.
 .TP
-.B q
+.B ENTER, q
 Quit the selection interface.
-
-If a command and its arguments are specified, the selected lines are passed as input to the command. Otherwise, the selected lines are saved to the specified output file or printed to stdout.
-
 .SH EXAMPLES
 .TP
-Select lines from "input.txt" and save them to "output.txt":
-.B
-textselect \-o output.txt input.txt
+.B textselect \-o output.txt input.txt
+Interactively select lines from \fIinput.txt\fR and save the selected lines to \fIoutput.txt\fR.
 .TP
-Select lines from "input.txt" and pass them as input to the "sort" command:
-.B
-textselect input.txt sort
-
+.B textselect input.txt sort
+Interactively select lines from \fIinput.txt\fR and pass the selected lines as arguments to the \fBsort\fR command.
+.TP
+.B textselect \-i input.txt echo \{\}
+Interactively select lines from \fIinput.txt\fR and execute the \fBecho\fR command for each selected line, replacing \{\} with the selected line.
+.TP
+.B textselect \-l input.txt echo
+Interactively select lines from \fIinput.txt\fR and execute the \fBecho\fR command for each selected line.
+.SH SEE ALSO
+.BR sort (1),
+.BR echo (1)
 .SH AUTHOR
 Written by Friedel Schon.
+.SH BUGS
+Issue bugs at https://github.com/friedelschoen/textselect.
+
