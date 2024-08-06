@@ -1,0 +1,58 @@
+.TH TEXTSELECT 1 "August 2024" "1.0" "Text Selection Tool"
+.SH NAME
+textselect \- A command-line tool to mark and select lines from a text file using ncurses.
+
+.SH SYNOPSIS
+.B textselect
+[\-v]
+.IR file
+
+.SH DESCRIPTION
+.B textselect
+is a command-line tool that allows users to interactively mark and select lines from a text file using ncurses. It displays the contents of a file, enables navigation through the lines, and allows lines to be marked. On exit, it prints the selected lines to the standard output.
+
+.SH OPTIONS
+.TP
+.B \-v
+Invert the selection mode. When this option is used, lines that are not marked will be printed upon exit.
+
+.SH USAGE
+Navigate through the file using the arrow keys. Mark or unmark a line by pressing the spacebar. Exit the program by pressing 'q'.
+
+The program reads the specified file and displays its contents in an ncurses window. The following keys are used for navigation and selection:
+.TP
+.UP
+Move the cursor up by one line.
+.TP
+.DOWN
+Move the cursor down by one line.
+.TP
+.SPACE
+Toggle the mark on the current line.
+.TP
+.q
+Exit the program and print the marked lines.
+
+.SH EXAMPLES
+.TP
+Select lines from a file:
+.B
+textselect myfile.txt
+.TP
+Invert the selection:
+.B
+textselect \-v myfile.txt
+
+.SH AUTHOR
+Written by [Your Name].
+
+.SH REPORTING BUGS
+Report bugs to <your_email@example.com>.
+
+.SH COPYRIGHT
+This is free software: you are free to change and redistribute it. There is NO WARRANTY, to the extent permitted by law.
+
+.SH SEE ALSO
+.BR ncurses (3X),
+.BR vi (1),
+.BR less (1)
