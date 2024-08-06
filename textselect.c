@@ -13,30 +13,33 @@
 
 #define NORETURN __attribute__((noreturn))
 
+
+void          buffer_grow(void);
+char*         buffer_getline(size_t line);
+void          die(const char* message);
+void          drawscreen(void);
+void          execute(char** argv);
+void          handlescreen(void);
+void          help(void);
+void          loadfile(const char* filename);
+void          printselected(int fd);
+void          runcommand_pipe(char** argv);
+void          runcommand_xargs(int argc, char** argv);
+void          runcommand_xlines(int argc, char** argv);
+void          runcommand_xreplace(int argc, char** argv);
+NORETURN void usage(int exitcode);
+
+char*  argv0           = NULL;
 char*  buffer          = NULL;
 size_t buffer_size     = 0;
 size_t buffer_alloc    = 0;
 int    buffer_lines    = 0;
-bool*  selected        = NULL;
-bool   selected_invert = false;
-char*  argv0           = NULL;
 int    current_line    = 0;
 int    head_line       = 0;
 int    height          = 0;
+bool*  selected        = NULL;
+bool   selected_invert = false;
 
-/**
- * @brief Handles error messages and exits the program.
- *
- * @param message Error message to print.
- */
-void die(const char* message) {
-	perror(message);
-	exit(EXIT_FAILURE);
-}
-
-/**
- * @brief Allocates memory for the buffer, growing it by BUFFERGROW bytes.
- */
 void buffer_grow(void) {
 	char* newbuffer;
 	if ((newbuffer = realloc(buffer, buffer_alloc += BUFFERGROW)) == NULL) {
@@ -45,46 +48,6 @@ void buffer_grow(void) {
 	buffer = newbuffer;
 }
 
-/**
- * @brief Loads a file into memory, storing its lines in the buffer.
- *
- * @param filename Name of the file to load, or NULL to read from stdin.
- */
-void loadfile(const char* filename) {
-	static char readbuf[READBUFFER];
-	ssize_t     nread;
-	int         fd;
-
-	if ((fd = open(filename, O_RDONLY)) == -1) die("Failed to open file");
-
-	while ((nread = read(fd, readbuf, sizeof(readbuf))) > 0) {
-		for (ssize_t i = 0; i < nread; i++) {
-			if (buffer_size == buffer_alloc) buffer_grow();
-
-			if (readbuf[i] == '\n') {
-				if (buffer[buffer_size - 1] != '\0') {
-					buffer[buffer_size++] = '\0';
-					buffer_lines++;
-				}
-			} else {
-				buffer[buffer_size++] = readbuf[i];
-			}
-		}
-	}
-
-	buffer[buffer_size++] = '\0';
-	if (fd > 2) close(fd);
-
-	selected = calloc(buffer_lines, sizeof(bool));
-	if (selected == NULL) die("allocating chosen_lines");
-}
-
-/**
- * @brief Retrieves a line from the buffer.
- *
- * @param line Line number to retrieve.
- * @return Pointer to the start of the line.
- */
 char* buffer_getline(size_t line) {
 	size_t current = 0;
 	if (line == 0) return buffer;
@@ -97,9 +60,11 @@ char* buffer_getline(size_t line) {
 	return NULL;
 }
 
-/**
- * @brief Prints lines to the ncurses window.
- */
+void die(const char* message) {
+	perror(message);
+	exit(EXIT_FAILURE);
+}
+
 void drawscreen(void) {
 	werase(stdscr);
 	for (int i = 0; i < height && (head_line + i) < buffer_lines; i++) {
@@ -111,62 +76,19 @@ void drawscreen(void) {
 	wrefresh(stdscr);
 }
 
-/**
- * @brief Prints the chosen lines to the specified file descriptor.
- *
- * @param fd File descriptor to print to.
- */
-void printselected(int fd) {
-	size_t current = 0;
-	if (selected[0] != selected_invert)
-		dprintf(fd, "%s\n", buffer);
+void execute(char** argv) {
+	pid_t pid;
 
-	for (size_t i = 0; i < buffer_size; i++) {
-		if (buffer[i] == '\0') {
-			current++;
-			if (selected[current] != selected_invert)
-				dprintf(fd, "%s\n", &buffer[i + 1]);
-		}
+	if ((pid = fork()) == -1)
+		die("fork");
+
+	if (pid == 0) {
+		execvp(*argv, argv);
+		die("execvp");
 	}
+	wait(NULL);
 }
 
-/**
- * @brief Displays usage information and exits the program.
- *
- * @param exitcode Exit code.
- */
-NORETURN void usage(int exitcode) {
-	fprintf(stderr, "Usage: %s [-hvx] [-o output] <input> [command ...]\n", argv0);
-	exit(exitcode);
-}
-
-void help(void) {
-	fprintf(stderr,
-	        "Usage: %s [-hvx] [-o output] <input> [command [args...]]\n"
-	        "Interactively select lines from a text file and optionally execute a command with the selected lines.\n"
-	        "\n"
-	        "Options:\n"
-	        "  -h              Display this help message and exit\n"
-	        "  -v              Invert the selection of lines\n"
-	        "  -x              Call command with selected lines as arguement\n"
-	        "  -o output       Specify an output file to save the selected lines\n"
-	        "\n"
-	        "Navigation and selection keys:\n"
-	        "  UP, LEFT        Move the cursor up\n"
-	        "  DOWN, RIGHT     Move the cursor down\n"
-	        "  v               Invert the selection of lines\n"
-	        "  SPACE           Select or deselect the current line\n"
-	        "  ENTER, q        Quit the selection interface\n"
-	        "\n"
-	        "Examples:\n"
-	        "  textselect -o output.txt input.txt\n"
-	        "  textselect input.txt sort\n",
-	        argv0);
-}
-
-/**
- * @brief Initializes and handles the ncurses window for line selection.
- */
 void handlescreen(void) {
 	bool quit = false;
 
@@ -213,11 +135,73 @@ void handlescreen(void) {
 	endwin();
 }
 
-/**
- * @brief Executes a command and passes the chosen lines as stdin.
- *
- * @param argv Command and its arguments.
- */
+void help(void) {
+	fprintf(stderr,
+	        "Usage: %s [-hvx] [-o output] <input> [command [args...]]\n"
+	        "Interactively select lines from a text file and optionally execute a command with the selected lines.\n"
+	        "\n"
+	        "Options:\n"
+	        "  -h              Display this help message and exit\n"
+	        "  -v              Invert the selection of lines\n"
+	        "  -x              Call command with selected lines as argument\n"
+	        "  -o output       Specify an output file to save the selected lines\n"
+	        "\n"
+	        "Navigation and selection keys:\n"
+	        "  UP, LEFT        Move the cursor up\n"
+	        "  DOWN, RIGHT     Move the cursor down\n"
+	        "  v               Invert the selection of lines\n"
+	        "  SPACE           Select or deselect the current line\n"
+	        "  ENTER, q        Quit the selection interface\n"
+	        "\n"
+	        "Examples:\n"
+	        "  textselect -o output.txt input.txt\n"
+	        "  textselect input.txt sort\n",
+	        argv0);
+}
+
+void loadfile(const char* filename) {
+	static char readbuf[READBUFFER];
+	ssize_t     nread;
+	int         fd;
+
+	if ((fd = open(filename, O_RDONLY)) == -1) die("Failed to open file");
+
+	while ((nread = read(fd, readbuf, sizeof(readbuf))) > 0) {
+		for (ssize_t i = 0; i < nread; i++) {
+			if (buffer_size == buffer_alloc) buffer_grow();
+
+			if (readbuf[i] == '\n') {
+				if (buffer[buffer_size - 1] != '\0') {
+					buffer[buffer_size++] = '\0';
+					buffer_lines++;
+				}
+			} else {
+				buffer[buffer_size++] = readbuf[i];
+			}
+		}
+	}
+
+	buffer[buffer_size++] = '\0';
+	if (fd > 2) close(fd);
+
+	selected = calloc(buffer_lines, sizeof(bool));
+	if (selected == NULL) die("allocating selected");
+}
+
+void printselected(int fd) {
+	size_t current = 0;
+	if (selected[0] != selected_invert)
+		dprintf(fd, "%s\n", buffer);
+
+	for (size_t i = 0; i < buffer_size; i++) {
+		if (buffer[i] == '\0') {
+			current++;
+			if (selected[current] != selected_invert)
+				dprintf(fd, "%s\n", &buffer[i + 1]);
+		}
+	}
+}
+
 void runcommand_pipe(char** argv) {
 	int   pipefd[2];
 	pid_t pid;
@@ -237,19 +221,6 @@ void runcommand_pipe(char** argv) {
 		close(pipefd[1]);    // Close write end after writing
 		wait(NULL);          // Wait for the child process to finish
 	}
-}
-
-void execute(char** argv) {
-	pid_t pid;
-
-	if ((pid = fork()) == -1)
-		die("fork");
-
-	if (pid == 0) {
-		execvp(*argv, argv);
-		die("execvp");
-	}
-	wait(NULL);
 }
 
 void runcommand_xargs(int argc, char** argv) {
@@ -327,6 +298,11 @@ void runcommand_xreplace(int argc, char** argv) {
 			}
 		}
 	}
+}
+
+NORETURN void usage(int exitcode) {
+	fprintf(stderr, "Usage: %s [-hvx] [-o output] <input> [command ...]\n", argv0);
+	exit(exitcode);
 }
 
 int main(int argc, char* argv[]) {
