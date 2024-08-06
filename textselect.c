@@ -13,13 +13,16 @@
 
 #define NORETURN __attribute__((noreturn))
 
-char*  buffer        = NULL;
-size_t buffer_ptr    = 0;
-size_t buffer_alloc  = 0;
-int    line_count    = 0;
-bool*  chosen_lines  = NULL;
-bool   invert_chosen = false;
-char*  argv0;
+char*  buffer          = NULL;
+size_t buffer_size     = 0;
+size_t buffer_alloc    = 0;
+int    buffer_lines    = 0;
+bool*  selected        = NULL;
+bool   selected_invert = false;
+char*  argv0           = NULL;
+int    current_line    = 0;
+int    head_line       = 0;
+int    height          = 0;
 
 /**
  * @brief Handles error messages and exits the program.
@@ -34,12 +37,12 @@ void die(const char* message) {
 /**
  * @brief Allocates memory for the buffer, growing it by BUFFERGROW bytes.
  */
-void grow_buffer(void) {
-	char* new_buf;
-	if ((new_buf = realloc(buffer, buffer_alloc += BUFFERGROW)) == NULL) {
+void buffer_grow(void) {
+	char* newbuffer;
+	if ((newbuffer = realloc(buffer, buffer_alloc += BUFFERGROW)) == NULL) {
 		die("allocating buffer");
 	}
-	buffer = new_buf;
+	buffer = newbuffer;
 }
 
 /**
@@ -47,34 +50,33 @@ void grow_buffer(void) {
  *
  * @param filename Name of the file to load, or NULL to read from stdin.
  */
-void load_file(const char* filename) {
+void loadfile(const char* filename) {
 	static char readbuf[READBUFFER];
 	ssize_t     nread;
 	int         fd;
 
-	fd = (filename == NULL) ? STDIN_FILENO : open(filename, O_RDONLY);
-	if (fd == -1) die("Failed to open file");
+	if ((fd = open(filename, O_RDONLY)) == -1) die("Failed to open file");
 
 	while ((nread = read(fd, readbuf, sizeof(readbuf))) > 0) {
 		for (ssize_t i = 0; i < nread; i++) {
-			if (buffer_ptr == buffer_alloc) grow_buffer();
+			if (buffer_size == buffer_alloc) buffer_grow();
 
 			if (readbuf[i] == '\n') {
-				if (buffer[buffer_ptr - 1] != '\0') {
-					buffer[buffer_ptr++] = '\0';
-					line_count++;
+				if (buffer[buffer_size - 1] != '\0') {
+					buffer[buffer_size++] = '\0';
+					buffer_lines++;
 				}
 			} else {
-				buffer[buffer_ptr++] = readbuf[i];
+				buffer[buffer_size++] = readbuf[i];
 			}
 		}
 	}
 
-	buffer[buffer_ptr++] = '\0';
+	buffer[buffer_size++] = '\0';
 	if (fd > 2) close(fd);
 
-	chosen_lines = calloc(line_count, sizeof(bool));
-	if (chosen_lines == NULL) die("allocating chosen_lines");
+	selected = calloc(buffer_lines, sizeof(bool));
+	if (selected == NULL) die("allocating chosen_lines");
 }
 
 /**
@@ -83,10 +85,10 @@ void load_file(const char* filename) {
  * @param line Line number to retrieve.
  * @return Pointer to the start of the line.
  */
-char* get_line(size_t line) {
+char* buffer_getline(size_t line) {
 	size_t current = 0;
 	if (line == 0) return buffer;
-	for (size_t i = 0; i < buffer_ptr; i++) {
+	for (size_t i = 0; i < buffer_size; i++) {
 		if (buffer[i] == '\0') {
 			current++;
 			if (current == line) return &buffer[i + 1];
@@ -97,21 +99,16 @@ char* get_line(size_t line) {
 
 /**
  * @brief Prints lines to the ncurses window.
- *
- * @param win ncurses window to print to.
- * @param current_line Line currently selected.
- * @param start_line Line to start printing from.
- * @param max_y Maximum number of lines to print.
  */
-void draw_lines(WINDOW* win, int current_line, int start_line, int max_y) {
-	werase(win);
-	for (int i = 0; i < max_y && (start_line + i) < line_count; i++) {
-		if ((start_line + i) == current_line) wattron(win, A_REVERSE);
-		if (chosen_lines[start_line + i] != invert_chosen) wattron(win, A_BOLD);
-		mvwprintw(win, i, 0, "%s", get_line(start_line + i));
-		wattroff(win, A_REVERSE | A_BOLD);
+void drawscreen(void) {
+	werase(stdscr);
+	for (int i = 0; i < height && (head_line + i) < buffer_lines; i++) {
+		if ((head_line + i) == current_line) wattron(stdscr, A_REVERSE);
+		if (selected[head_line + i] != selected_invert) wattron(stdscr, A_BOLD);
+		mvwprintw(stdscr, i, 0, "%s", buffer_getline(head_line + i));
+		wattroff(stdscr, A_REVERSE | A_BOLD);
 	}
-	wrefresh(win);
+	wrefresh(stdscr);
 }
 
 /**
@@ -119,32 +116,18 @@ void draw_lines(WINDOW* win, int current_line, int start_line, int max_y) {
  *
  * @param fd File descriptor to print to.
  */
-void output_chosen_lines_fd(int fd) {
+void printselected(int fd) {
 	size_t current = 0;
-	if (chosen_lines[0] != invert_chosen)
+	if (selected[0] != selected_invert)
 		dprintf(fd, "%s\n", buffer);
 
-	for (size_t i = 0; i < buffer_ptr; i++) {
+	for (size_t i = 0; i < buffer_size; i++) {
 		if (buffer[i] == '\0') {
 			current++;
-			if (chosen_lines[current] != invert_chosen)
+			if (selected[current] != selected_invert)
 				dprintf(fd, "%s\n", &buffer[i + 1]);
 		}
 	}
-}
-
-/**
- * @brief Prints the chosen lines to the specified output file.
- *
- * @param filename Name of the output file.
- */
-void output_chosen_lines(char* filename) {
-	int fd;
-
-	fd = (filename == NULL) ? STDOUT_FILENO : open(filename, O_WRONLY | O_TRUNC | O_CREAT, 0664);
-	if (fd == -1) die("Failed to open file");
-
-	output_chosen_lines_fd(fd);
 }
 
 /**
@@ -158,44 +141,43 @@ NORETURN void usage(int exitcode) {
 }
 
 void help(void) {
-    fprintf(stderr,
-        "Usage: %s [-hvx] [-o output] <input> [command [args...]]\n"
-        "Interactively select lines from a text file and optionally execute a command with the selected lines.\n"
-		"\n"
-        "Options:\n"
-        "  -h              Display this help message and exit\n"
-        "  -v              Invert the selection of lines\n"
-		"  -x              Call command with selected lines as arguement\n"
-        "  -o output       Specify an output file to save the selected lines\n"
-		"\n"
-        "Navigation and selection keys:\n"
-        "  UP, LEFT        Move the cursor up\n"
-        "  DOWN, RIGHT     Move the cursor down\n"
-        "  v               Invert the selection of lines\n"
-        "  SPACE           Select or deselect the current line\n"
-        "  ENTER, q        Quit the selection interface\n"
-		"\n"
-        "Examples:\n"
-        "  textselect -o output.txt input.txt\n"
-        "  textselect input.txt sort\n",
-        argv0);
+	fprintf(stderr,
+	        "Usage: %s [-hvx] [-o output] <input> [command [args...]]\n"
+	        "Interactively select lines from a text file and optionally execute a command with the selected lines.\n"
+	        "\n"
+	        "Options:\n"
+	        "  -h              Display this help message and exit\n"
+	        "  -v              Invert the selection of lines\n"
+	        "  -x              Call command with selected lines as arguement\n"
+	        "  -o output       Specify an output file to save the selected lines\n"
+	        "\n"
+	        "Navigation and selection keys:\n"
+	        "  UP, LEFT        Move the cursor up\n"
+	        "  DOWN, RIGHT     Move the cursor down\n"
+	        "  v               Invert the selection of lines\n"
+	        "  SPACE           Select or deselect the current line\n"
+	        "  ENTER, q        Quit the selection interface\n"
+	        "\n"
+	        "Examples:\n"
+	        "  textselect -o output.txt input.txt\n"
+	        "  textselect input.txt sort\n",
+	        argv0);
 }
 
 /**
  * @brief Initializes and handles the ncurses window for line selection.
  */
-void display_window(void) {
+void handlescreen(void) {
+	bool quit = false;
+
 	initscr();
 	cbreak();
 	noecho();
 	keypad(stdscr, TRUE);
 
-	int current_line = 0;
-	int start_line   = 0;
-	int max_y = getmaxy(stdscr);
-	bool quit = false;
+	height = getmaxy(stdscr);
 
-	draw_lines(stdscr, current_line, start_line, max_y);
+	drawscreen();
 
 	while (!quit) {
 		switch (getch()) {
@@ -203,29 +185,29 @@ void display_window(void) {
 			case KEY_LEFT:
 				if (current_line > 0) {
 					(current_line)--;
-					if (current_line < start_line)
-						start_line--;
+					if (current_line < head_line)
+						head_line--;
 				}
 				break;
 			case KEY_DOWN:
 			case KEY_RIGHT:
-				if (current_line < line_count - 1) {
+				if (current_line < buffer_lines - 1) {
 					(current_line)++;
-					if (current_line >= start_line + max_y)
-						start_line++;
+					if (current_line >= head_line + height)
+						head_line++;
 				}
 				break;
 			case 'v':
-				invert_chosen = !invert_chosen;
+				selected_invert = !selected_invert;
 				break;
 			case ' ':
-				chosen_lines[current_line] = !chosen_lines[current_line];
+				selected[current_line] = !selected[current_line];
 				break;
-			case KEY_ENTER:
+			case '\n':    // Use '\n' for ENTER key
 			case 'q':
 				quit = true;
 		}
-		draw_lines(stdscr, current_line, start_line, max_y);
+		drawscreen();
 	}
 
 	endwin();
@@ -236,7 +218,7 @@ void display_window(void) {
  *
  * @param argv Command and its arguments.
  */
-void execute_command(char** argv) {
+void runcommand_pipe(char** argv) {
 	int   pipefd[2];
 	pid_t pid;
 
@@ -251,51 +233,107 @@ void execute_command(char** argv) {
 		die("execvp");       // If execvp fails
 	} else {                 // Parent process
 		close(pipefd[0]);    // Close read end of the pipe
-		output_chosen_lines_fd(pipefd[1]);
+		printselected(pipefd[1]);
 		close(pipefd[1]);    // Close write end after writing
 		wait(NULL);          // Wait for the child process to finish
 	}
 }
 
-void execute_command_xargs(int argc, char** argv) {
+void execute(char** argv) {
+	pid_t pid;
+
+	if ((pid = fork()) == -1)
+		die("fork");
+
+	if (pid == 0) {
+		execvp(*argv, argv);
+		die("execvp");
+	}
+	wait(NULL);
+}
+
+void runcommand_xargs(int argc, char** argv) {
 	char** newargv;
 	int    chosencount = argc + 1;    // + NULL
-	for (int i = 0; i < line_count; i++)
-		if (chosen_lines[i] != invert_chosen)
+	for (int i = 0; i < buffer_lines; i++)
+		if (selected[i] != selected_invert)
 			chosencount++;
 
-	newargv = malloc(chosencount * sizeof(char*));
+	newargv = alloca(chosencount * sizeof(char*));
 	int newargc;
 	for (newargc = 0; newargc < argc; newargc++)
 		newargv[newargc] = argv[newargc];
 
 	size_t current = 0;
-	if (chosen_lines[0] != invert_chosen)
+	if (selected[0] != selected_invert)
 		newargv[newargc++] = buffer;
 
-	for (size_t i = 0; i < buffer_ptr; i++) {
+	for (size_t i = 0; i < buffer_size; i++) {
 		if (buffer[i] == '\0') {
 			current++;
-			if (chosen_lines[current] != invert_chosen)
+			if (selected[current] != selected_invert)
 				newargv[newargc++] = &buffer[i + 1];
 		}
 	}
 
 	newargv[newargc++] = NULL;
 
-	pid_t pid;
+	execute(newargv);
+}
 
-	if ((pid = fork()) == -1) die("fork");
-	if (pid == 0) {
-		execvp(newargv[0], newargv);
-		die("execvp");
+void runcommand_xlines(int argc, char** argv) {
+	char** newargv;
+	newargv = alloca((argc + 2) * sizeof(char*));
+
+	for (int i = 0; i < argc; i++)
+		newargv[i] = argv[i];
+
+	newargv[argc + 1] = NULL;
+
+	size_t current = 0;
+	if (selected[0] != selected_invert) {
+		newargv[argc] = buffer;
+		execute(newargv);
 	}
-	wait(NULL);
+	for (size_t i = 0; i < buffer_size; i++) {
+		if (buffer[i] == '\0') {
+			current++;
+			if (selected[current] != selected_invert) {
+				newargv[argc] = &buffer[i + 1];
+				execute(newargv);
+			}
+		}
+	}
+}
+
+void runcommand_xreplace(int argc, char** argv) {
+	char** newargv;
+	newargv       = alloca((argc + 1) * sizeof(char*));
+	newargv[argc] = NULL;
+
+	size_t current = 0;
+	if (selected[0] != selected_invert) {
+		for (int i = 0; i < argc; i++)
+			newargv[i] = !strcmp(argv[i], "{}") ? buffer : argv[i];
+		execute(newargv);
+	}
+	for (size_t i = 0; i < buffer_size; i++) {
+		if (buffer[i] == '\0') {
+			current++;
+			if (selected[current] != selected_invert) {
+				for (int j = 0; j < argc; j++)
+					newargv[j] = !strcmp(argv[j], "{}") ? &buffer[i + 1] : argv[j];
+				execute(newargv);
+			}
+		}
+	}
 }
 
 int main(int argc, char* argv[]) {
-	char* output = NULL;
-	bool  xargs  = false;
+	char* output   = NULL;
+	bool  xargs    = false;
+	bool  xlines   = false;
+	bool  xreplace = false;
 
 	argv0 = argv[0];
 	ARGBEGIN
@@ -304,10 +342,28 @@ int main(int argc, char* argv[]) {
 			help();
 			exit(0);
 		case 'v':
-			invert_chosen = true;
+			selected_invert = true;
 			break;
 		case 'x':
+			if (xreplace || xlines) {
+				fprintf(stderr, "error: -x is mutually exclusive with -i and -l\n");
+				exit(EXIT_FAILURE);
+			}
 			xargs = true;
+			break;
+		case 'i':
+			if (xargs || xlines) {
+				fprintf(stderr, "error: -i is mutually exclusive with -x and -l\n");
+				exit(EXIT_FAILURE);
+			}
+			xreplace = true;
+			break;
+		case 'l':
+			if (xreplace || xargs) {
+				fprintf(stderr, "error: -l is mutually exclusive with -i and -x\n");
+				exit(EXIT_FAILURE);
+			}
+			xlines = true;
 			break;
 		case 'o':
 			output = EARGF(usage(1));
@@ -323,21 +379,34 @@ int main(int argc, char* argv[]) {
 		usage(1);
 	}
 
-	load_file(argv[0]);
+	loadfile(argv[0]);
 	SHIFT;
 
-	display_window();
+	handlescreen();
+
+	if (output != NULL) {
+		int fd;
+
+		fd = open(output, O_WRONLY | O_TRUNC | O_CREAT, 0664);
+		if (fd == -1) die("Failed to open file");
+
+		printselected(fd);
+	}
 
 	if (argc == 0) {
-		output_chosen_lines(output);
-	} else if (!xargs) {
-		execute_command(argv);
+		printselected(STDOUT_FILENO);
+	} else if (xargs) {
+		runcommand_xargs(argc, argv);
+	} else if (xlines) {
+		runcommand_xlines(argc, argv);
+	} else if (xreplace) {
+		runcommand_xreplace(argc, argv);
 	} else {
-		execute_command_xargs(argc, argv);
+		runcommand_pipe(argv);
 	}
 
 	free(buffer);
-	free(chosen_lines);
+	free(selected);
 
 	return 0;
 }
