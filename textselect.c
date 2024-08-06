@@ -157,6 +157,30 @@ NORETURN void usage(int exitcode) {
 	exit(exitcode);
 }
 
+void help(void) {
+    fprintf(stderr,
+        "Usage: %s [-hvx] [-o output] <input> [command [args...]]\n"
+        "Interactively select lines from a text file and optionally execute a command with the selected lines.\n"
+		"\n"
+        "Options:\n"
+        "  -h              Display this help message and exit\n"
+        "  -v              Invert the selection of lines\n"
+		"  -x              Call command with selected lines as arguement\n"
+        "  -o output       Specify an output file to save the selected lines\n"
+		"\n"
+        "Navigation and selection keys:\n"
+        "  UP, LEFT        Move the cursor up\n"
+        "  DOWN, RIGHT     Move the cursor down\n"
+        "  v               Invert the selection of lines\n"
+        "  SPACE           Select or deselect the current line\n"
+        "  ENTER, q        Quit the selection interface\n"
+		"\n"
+        "Examples:\n"
+        "  textselect -o output.txt input.txt\n"
+        "  textselect input.txt sort\n",
+        argv0);
+}
+
 /**
  * @brief Initializes and handles the ncurses window for line selection.
  */
@@ -168,13 +192,13 @@ void display_window(void) {
 
 	int current_line = 0;
 	int start_line   = 0;
-	int ch;
 	int max_y = getmaxy(stdscr);
+	bool quit = false;
 
 	draw_lines(stdscr, current_line, start_line, max_y);
 
-	while ((ch = getch()) != 'q') {
-		switch (ch) {
+	while (!quit) {
+		switch (getch()) {
 			case KEY_UP:
 			case KEY_LEFT:
 				if (current_line > 0) {
@@ -194,10 +218,12 @@ void display_window(void) {
 			case 'v':
 				invert_chosen = !invert_chosen;
 				break;
-			case KEY_ENTER:
 			case ' ':
 				chosen_lines[current_line] = !chosen_lines[current_line];
 				break;
+			case KEY_ENTER:
+			case 'q':
+				quit = true;
 		}
 		draw_lines(stdscr, current_line, start_line, max_y);
 	}
@@ -275,7 +301,8 @@ int main(int argc, char* argv[]) {
 	ARGBEGIN
 	switch (OPT) {
 		case 'h':
-			usage(0);
+			help();
+			exit(0);
 		case 'v':
 			invert_chosen = true;
 			break;
