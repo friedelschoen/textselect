@@ -132,6 +132,7 @@ void help(void) {
 	        "Options:\n"
 	        "  -h              Display this help message and exit\n"
 	        "  -v              Invert the selection of lines\n"
+			"  -n              Keep empty lines which are not selectable\n"
 	        "  -o output       Specify an output file to save the selected lines\n"
 	        "\n"
 	        "Navigation and selection keys:\n"
@@ -178,13 +179,13 @@ void loadfile(const char* filename, bool keep_empty) {
 
 void printselected(int fd) {
 	size_t current = 0;
-	if (selected[0] != selected_invert)
+	if (selected[0] != selected_invert && buffer[0] != '\0') // is selected AND it's not empty
 		dprintf(fd, "%s\n", buffer);
 
 	for (size_t i = 0; i < buffer_size; i++) {
 		if (buffer[i] == '\0') {
 			current++;
-			if (selected[current] != selected_invert)
+			if (selected[current] != selected_invert && buffer[i + 1] != '\0') // is selected AND it's not empty
 				dprintf(fd, "%s\n", &buffer[i + 1]);
 		}
 	}
@@ -231,7 +232,7 @@ int main(int argc, char* argv[]) {
 		case 'v':
 			selected_invert = true;
 			break;
-		case 'e':
+		case 'n':
 			keep_empty = true;
 			break;
 		case 'o':
