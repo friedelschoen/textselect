@@ -20,9 +20,9 @@ static void          die(const char* message);
 static void          drawscreen(void);
 static void          handlescreen(void);
 static void          help(void);
-static void          loadfile(const char* filename);
+static void          loadfile(const char* filename, bool keep_empty);
 static void          printselected(int fd);
-static void          runcommand_pipe(char** argv);
+static void          runcommand(char** argv);
 static NORETURN void usage(int exitcode);
 
 static char*  argv0           = NULL;
@@ -39,7 +39,7 @@ static bool   selected_invert = false;
 void buffer_grow(void) {
 	char* newbuffer;
 	if ((newbuffer = realloc(buffer, buffer_alloc += BUFFERGROW)) == NULL) {
-		die("allocating buffer");
+		die("unable to allocate buffer");
 	}
 	buffer = newbuffer;
 }
@@ -50,7 +50,8 @@ char* buffer_getline(size_t line) {
 	for (size_t i = 0; i < buffer_size; i++) {
 		if (buffer[i] == '\0') {
 			current++;
-			if (current == line) return &buffer[i + 1];
+			if (current == line) 
+				return &buffer[i + 1];
 		}
 	}
 	return NULL;
@@ -146,19 +147,19 @@ void help(void) {
 	        argv0);
 }
 
-void loadfile(const char* filename) {
+void loadfile(const char* filename, bool keep_empty) {
 	static char readbuf[READBUFFER];
 	ssize_t     nread;
 	int         fd;
 
-	if ((fd = open(filename, O_RDONLY)) == -1) die("Failed to open file");
+	if ((fd = open(filename, O_RDONLY)) == -1) die("unable to open input-file");
 
 	while ((nread = read(fd, readbuf, sizeof(readbuf))) > 0) {
 		for (ssize_t i = 0; i < nread; i++) {
 			if (buffer_size == buffer_alloc) buffer_grow();
 
 			if (readbuf[i] == '\n') {
-				if (buffer[buffer_size - 1] != '\0') {
+				if (keep_empty || buffer[buffer_size - 1] != '\0') {
 					buffer[buffer_size++] = '\0';
 					buffer_lines++;
 				}
@@ -172,7 +173,7 @@ void loadfile(const char* filename) {
 	if (fd > 2) close(fd);
 
 	selected = calloc(buffer_lines, sizeof(bool));
-	if (selected == NULL) die("allocating selected");
+	if (selected == NULL) die("unable to allocate selected-lines");
 }
 
 void printselected(int fd) {
@@ -189,25 +190,27 @@ void printselected(int fd) {
 	}
 }
 
-void runcommand_pipe(char** argv) {
+void runcommand(char** argv) {
 	int   pipefd[2];
 	pid_t pid;
 
-	if (pipe(pipefd) == -1) die("pipe");
+	if (pipe(pipefd) == -1)
+		die("unable to create pipe");
 
-	if ((pid = fork()) == -1) die("fork");
+	if ((pid = fork()) == -1)
+		die("unable to fork for child process");
 
 	if (pid == 0) {                       // Child process
 		close(pipefd[1]);                 // Close write end of the pipe
 		dup2(pipefd[0], STDIN_FILENO);    // Redirect stdin to read end of the pipe
 		execvp(argv[0], argv);
-		die("execvp");       // If execvp fails
-	} else {                 // Parent process
-		close(pipefd[0]);    // Close read end of the pipe
-		printselected(pipefd[1]);
-		close(pipefd[1]);    // Close write end after writing
-		wait(NULL);          // Wait for the child process to finish
+		die("unable to execute child");       // If execvp fails
 	}
+
+	close(pipefd[0]);    // Close read end of the pipe
+	printselected(pipefd[1]);
+	close(pipefd[1]);    // Close write end after writing
+	wait(NULL);          // Wait for the child process to finish
 }
 
 NORETURN void usage(int exitcode) {
@@ -217,6 +220,7 @@ NORETURN void usage(int exitcode) {
 
 int main(int argc, char* argv[]) {
 	char* output = NULL;
+	bool keep_empty = false;
 
 	argv0 = argv[0];
 	ARGBEGIN
@@ -226,6 +230,9 @@ int main(int argc, char* argv[]) {
 			exit(0);
 		case 'v':
 			selected_invert = true;
+			break;
+		case 'e':
+			keep_empty = true;
 			break;
 		case 'o':
 			output = EARGF(usage(1));
@@ -241,7 +248,7 @@ int main(int argc, char* argv[]) {
 		usage(1);
 	}
 
-	loadfile(argv[0]);
+	loadfile(argv[0], keep_empty);
 	SHIFT;
 
 	handlescreen();
@@ -250,7 +257,8 @@ int main(int argc, char* argv[]) {
 		int fd;
 
 		fd = open(output, O_WRONLY | O_TRUNC | O_CREAT, 0664);
-		if (fd == -1) die("Failed to open file");
+		if (fd == -1) 
+			die("unable to open output-file");
 
 		printselected(fd);
 	}
@@ -258,7 +266,7 @@ int main(int argc, char* argv[]) {
 	if (argc == 0) {
 		printselected(STDOUT_FILENO);
 	} else {
-		runcommand_pipe(argv);
+		runcommand(argv);
 	}
 
 	free(buffer);
