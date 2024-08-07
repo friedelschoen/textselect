@@ -24,9 +24,6 @@ void          help(void);
 void          loadfile(const char* filename);
 void          printselected(int fd);
 void          runcommand_pipe(char** argv);
-void          runcommand_xargs(int argc, char** argv);
-void          runcommand_xlines(int argc, char** argv);
-void          runcommand_xreplace(int argc, char** argv);
 NORETURN void usage(int exitcode);
 
 char*  argv0           = NULL;
@@ -74,19 +71,6 @@ void drawscreen(void) {
 		wattroff(stdscr, A_REVERSE | A_BOLD);
 	}
 	wrefresh(stdscr);
-}
-
-void execute(char** argv) {
-	pid_t pid;
-
-	if ((pid = fork()) == -1)
-		die("fork");
-
-	if (pid == 0) {
-		execvp(*argv, argv);
-		die("execvp");
-	}
-	wait(NULL);
 }
 
 void handlescreen(void) {
@@ -137,13 +121,12 @@ void handlescreen(void) {
 
 void help(void) {
 	fprintf(stderr,
-	        "Usage: %s [-hvx] [-o output] <input> [command [args...]]\n"
+	        "Usage: %s [-hv] [-o output] <input> [command [args...]]\n"
 	        "Interactively select lines from a text file and optionally execute a command with the selected lines.\n"
 	        "\n"
 	        "Options:\n"
 	        "  -h              Display this help message and exit\n"
 	        "  -v              Invert the selection of lines\n"
-	        "  -x              Call command with selected lines as argument\n"
 	        "  -o output       Specify an output file to save the selected lines\n"
 	        "\n"
 	        "Navigation and selection keys:\n"
@@ -223,93 +206,13 @@ void runcommand_pipe(char** argv) {
 	}
 }
 
-void runcommand_xargs(int argc, char** argv) {
-	char** newargv;
-	int    chosencount = argc + 1;    // + NULL
-	for (int i = 0; i < buffer_lines; i++)
-		if (selected[i] != selected_invert)
-			chosencount++;
-
-	newargv = alloca(chosencount * sizeof(char*));
-	int newargc;
-	for (newargc = 0; newargc < argc; newargc++)
-		newargv[newargc] = argv[newargc];
-
-	size_t current = 0;
-	if (selected[0] != selected_invert)
-		newargv[newargc++] = buffer;
-
-	for (size_t i = 0; i < buffer_size; i++) {
-		if (buffer[i] == '\0') {
-			current++;
-			if (selected[current] != selected_invert)
-				newargv[newargc++] = &buffer[i + 1];
-		}
-	}
-
-	newargv[newargc++] = NULL;
-
-	execute(newargv);
-}
-
-void runcommand_xlines(int argc, char** argv) {
-	char** newargv;
-	newargv = alloca((argc + 2) * sizeof(char*));
-
-	for (int i = 0; i < argc; i++)
-		newargv[i] = argv[i];
-
-	newargv[argc + 1] = NULL;
-
-	size_t current = 0;
-	if (selected[0] != selected_invert) {
-		newargv[argc] = buffer;
-		execute(newargv);
-	}
-	for (size_t i = 0; i < buffer_size; i++) {
-		if (buffer[i] == '\0') {
-			current++;
-			if (selected[current] != selected_invert) {
-				newargv[argc] = &buffer[i + 1];
-				execute(newargv);
-			}
-		}
-	}
-}
-
-void runcommand_xreplace(int argc, char** argv) {
-	char** newargv;
-	newargv       = alloca((argc + 1) * sizeof(char*));
-	newargv[argc] = NULL;
-
-	size_t current = 0;
-	if (selected[0] != selected_invert) {
-		for (int i = 0; i < argc; i++)
-			newargv[i] = !strcmp(argv[i], "{}") ? buffer : argv[i];
-		execute(newargv);
-	}
-	for (size_t i = 0; i < buffer_size; i++) {
-		if (buffer[i] == '\0') {
-			current++;
-			if (selected[current] != selected_invert) {
-				for (int j = 0; j < argc; j++)
-					newargv[j] = !strcmp(argv[j], "{}") ? &buffer[i + 1] : argv[j];
-				execute(newargv);
-			}
-		}
-	}
-}
-
 NORETURN void usage(int exitcode) {
-	fprintf(stderr, "Usage: %s [-hvx] [-o output] <input> [command ...]\n", argv0);
+	fprintf(stderr, "Usage: %s [-hv] [-o output] <input> [command ...]\n", argv0);
 	exit(exitcode);
 }
 
 int main(int argc, char* argv[]) {
-	char* output   = NULL;
-	bool  xargs    = false;
-	bool  xlines   = false;
-	bool  xreplace = false;
+	char* output = NULL;
 
 	argv0 = argv[0];
 	ARGBEGIN
@@ -319,27 +222,6 @@ int main(int argc, char* argv[]) {
 			exit(0);
 		case 'v':
 			selected_invert = true;
-			break;
-		case 'x':
-			if (xreplace || xlines) {
-				fprintf(stderr, "error: -x is mutually exclusive with -i and -l\n");
-				exit(EXIT_FAILURE);
-			}
-			xargs = true;
-			break;
-		case 'i':
-			if (xargs || xlines) {
-				fprintf(stderr, "error: -i is mutually exclusive with -x and -l\n");
-				exit(EXIT_FAILURE);
-			}
-			xreplace = true;
-			break;
-		case 'l':
-			if (xreplace || xargs) {
-				fprintf(stderr, "error: -l is mutually exclusive with -i and -x\n");
-				exit(EXIT_FAILURE);
-			}
-			xlines = true;
 			break;
 		case 'o':
 			output = EARGF(usage(1));
@@ -371,12 +253,6 @@ int main(int argc, char* argv[]) {
 
 	if (argc == 0) {
 		printselected(STDOUT_FILENO);
-	} else if (xargs) {
-		runcommand_xargs(argc, argv);
-	} else if (xlines) {
-		runcommand_xlines(argc, argv);
-	} else if (xreplace) {
-		runcommand_xreplace(argc, argv);
 	} else {
 		runcommand_pipe(argv);
 	}

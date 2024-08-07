@@ -29,9 +29,6 @@ textselect [-hvxil] [-o output] <input> [command [args...]]
 
 - `-h`: Display the help message and exit.
 - `-v`: Invert the selection of lines.
-- `-x`: Call command with selected lines as arguments (mutually exclusive with `-i` and `-l`).
-- `-i`: Replace occurrences of `{}` in the command with each selected line, one at a time (mutually exclusive with `-x` and `-l`).
-- `-l`: Execute the command once for each selected line (mutually exclusive with `-x` and `-i`).
 - `-o output`: Specify an output file to save the selected lines.
 
 ### Navigation and Selection Keys
