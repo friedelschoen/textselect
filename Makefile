@@ -1,4 +1,4 @@
-CFLAGS += -O2 -Wall -Wextra -Wpedantic
+CFLAGS += -O2 -Wall -Wextra -Wpedantic -g
 LDFLAGS += -lncurses
 PREFIX = /usr
 

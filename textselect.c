@@ -17,70 +17,47 @@
 #define NORETURN __attribute__((noreturn))
 
 
-static void          buffer_grow(void);
-static char*         buffer_getline(size_t line);
-static void          die(const char* message);
-static void          drawscreen(void);
-static void          handlescreen(void);
-static void          help(void);
-static void          loadfile(const char* filename, bool keep_empty);
-static void          printselected(int fd, bool print0);
-static void          runcommand(char** argv, bool print0);
-static NORETURN void usage(int exitcode);
+struct line {
+	char* content;
+	int   length;
+	bool  selected;
+};
 
-static char*  argv0           = NULL;
-static char*  buffer          = NULL;
-static size_t buffer_size     = 0;
-static size_t buffer_alloc    = 0;
-static int    buffer_lines    = 0;
-static int    current_line    = 0;
-static int    head_line       = 0;
-static int    height          = 0;
-static bool*  selected        = NULL;
-static bool   selected_invert = false;
+static void   die(const char* message) NORETURN;
+static void   drawscreen(int height, int current_line, int head_line);
+static void   handlescreen(void);
+static void   help(void);
+static size_t loadfile(const char* filename, char** buffer, int* lines);
+static void   printselected(int fd, bool print0);
+static void   runcommand(char** argv, bool print0);
+static void   usage(int exitcode) NORETURN;
 
-void buffer_grow(void) {
-	char* newbuffer;
-	if ((newbuffer = realloc(buffer, buffer_alloc += BUFFERGROW)) == NULL) {
-		die("unable to allocate buffer");
-	}
-	buffer = newbuffer;
-}
-
-char* buffer_getline(size_t line) {
-	size_t current = 0;
-	if (line == 0) return buffer;
-	for (size_t i = 0; i < buffer_size; i++) {
-		if (buffer[i] == '\0') {
-			current++;
-			if (current == line)
-				return &buffer[i + 1];
-		}
-	}
-	return NULL;
-}
+static struct line* lines           = NULL;
+static int          lines_count     = 0;
+static char*        argv0           = NULL;
+static bool         selected_invert = false;
+static bool         keep_empty      = false;
 
 void die(const char* message) {
 	fprintf(stderr, "error: %s: %s\n", message, strerror(errno));
 	exit(EXIT_FAILURE);
 }
 
-void drawscreen(void) {
-	char* line;
+void drawscreen(int height, int current_line, int head_line) {
 	int width = getmaxx(stdscr);
 
 	werase(stdscr);
-	for (int i = 0; i < height && (head_line + i) < buffer_lines; i++) {
+	for (int i = 0; i < height && i < lines_count - head_line; i++) {
 		if ((head_line + i) == current_line)
 			wattron(stdscr, A_REVERSE);
-		if (selected[head_line + i] != selected_invert)
+
+		if (lines[head_line + i].selected != selected_invert)
 			wattron(stdscr, A_BOLD);
 
-		line = buffer_getline(head_line + i);
-		if ((int) strlen(line) > width) {
-			mvwprintw(stdscr, i, 0, "%.*s...",  width-3, line);
+		if (lines[head_line + i].length > width) {
+			mvwprintw(stdscr, i, 0, "%.*s...", width - 3, lines[head_line + i].content);
 		} else {
-			mvwprintw(stdscr, i, 0, "%s", line);
+			mvwprintw(stdscr, i, 0, "%s", lines[head_line + i].content);
 		}
 
 		wattroff(stdscr, A_REVERSE | A_BOLD);
@@ -90,7 +67,10 @@ void drawscreen(void) {
 }
 
 void handlescreen(void) {
-	bool quit = false;
+	bool quit         = false;
+	int  height       = 0;
+	int  current_line = 0;
+	int  head_line    = 0;
 
 	initscr();
 	cbreak();
@@ -98,11 +78,11 @@ void handlescreen(void) {
 	keypad(stdscr, TRUE);
 
 	height = getmaxy(stdscr);
-	drawscreen();
+	drawscreen(height, current_line, head_line);
 
 	while (!quit) {
 		height = getmaxy(stdscr);
-	
+
 		switch (getch()) {
 			case KEY_UP:
 			case KEY_LEFT:
@@ -114,7 +94,7 @@ void handlescreen(void) {
 				break;
 			case KEY_DOWN:
 			case KEY_RIGHT:
-				if (current_line < buffer_lines - 1) {
+				if (current_line < lines_count - 1) {
 					(current_line)++;
 					if (current_line >= head_line + height)
 						head_line++;
@@ -124,13 +104,13 @@ void handlescreen(void) {
 				selected_invert = !selected_invert;
 				break;
 			case ' ':
-				selected[current_line] = !selected[current_line];
+				lines[current_line].selected = !lines[current_line].selected;
 				break;
 			case '\n':    // Use '\n' for ENTER key
 			case 'q':
 				quit = true;
 		}
-		drawscreen();
+		drawscreen(height, current_line, head_line);
 	}
 
 	endwin();
@@ -146,7 +126,7 @@ void help(void) {
 	        "  -v              Invert the selection of lines\n"
 	        "  -n              Keep empty lines which are not selectable\n"
 	        "  -o output       Specify an output file to save the selected lines\n"
-			"  -0              Print selected lines demilited by NUL-character\n"
+	        "  -0              Print selected lines demilited by NUL-character\n"
 	        "\n"
 	        "Navigation and selection keys:\n"
 	        "  UP, LEFT        Move the cursor up\n"
@@ -161,48 +141,68 @@ void help(void) {
 	        argv0);
 }
 
-void loadfile(const char* filename, bool keep_empty) {
+size_t loadfile(const char* filename, char** buffer, int* lines) {
 	static char readbuf[READBUFFER];
 	ssize_t     nread;
 	int         fd;
+	size_t      alloc = 0;
+	size_t      size  = 0;
 
-	if ((fd = open(filename, O_RDONLY)) == -1) die("unable to open input-file");
+	*buffer = NULL;
+	*lines = 1;
+
+	if ((fd = open(filename, O_RDONLY)) == -1)
+		die("unable to open input-file");
 
 	while ((nread = read(fd, readbuf, sizeof(readbuf))) > 0) {
 		for (ssize_t i = 0; i < nread; i++) {
-			if (buffer_size == buffer_alloc) buffer_grow();
+			if (size == alloc) {
+				if ((*buffer = realloc(*buffer, alloc += BUFFERGROW)) == NULL) {
+					die("unable to allocate buffer");
+				}
+			}
 
 			if (readbuf[i] == '\n') {
-				if (keep_empty || buffer[buffer_size - 1] != '\0') {
-					buffer[buffer_size++] = '\0';
-					buffer_lines++;
-				}
+				(*buffer)[size++] = '\0';
+				(*lines)++;
 			} else {
-				buffer[buffer_size++] = readbuf[i];
+				(*buffer)[size++] = readbuf[i];
 			}
 		}
 	}
+	(*buffer)[size++] = '\0';
+	(*lines)++;
+	close(fd);
 
-	buffer[buffer_size++] = '\0';
-	if (fd > 2) close(fd);
+	return size;
+}
 
-	selected = calloc(buffer_lines, sizeof(bool));
-	if (selected == NULL) die("unable to allocate selected-lines");
+void splitbuffer(char* buffer, size_t size, int maxlines) {
+	printf("maxlines: %d\n", maxlines);
+	lines = calloc(maxlines, sizeof(struct line));
+	if (lines == NULL)
+		die("unable to allocate line-mapping");
+
+	int start                    = 0;
+	lines_count                  = 0;
+	lines[lines_count].content = buffer;
+	lines[lines_count++].selected = false;
+	for (size_t i = 0; i < size; i++) {
+		if (buffer[i] == '\0' && (keep_empty || buffer[i - 1] != '\0')) {
+			lines[lines_count - 1].length = i - start;
+			lines[lines_count].content  = &buffer[i + 1];
+			lines[lines_count++].selected = false;
+			start                         = i + 1;
+		}
+	}
+	lines[lines_count - 1].length = size - start - 1;
 }
 
 void printselected(int fd, bool print0) {
-	size_t current = 0;
-	if (selected[0] != selected_invert && buffer[0] != '\0') {    // is selected AND it's not empty
-		write(fd, buffer, strlen(buffer));
-		write(fd, print0 ? "" : "\n", 1);
-	}
-	for (size_t i = 0; i < buffer_size; i++) {
-		if (buffer[i] == '\0') {
-			current++;
-			if (selected[current] != selected_invert && buffer[i + 1] != '\0') {    // is selected AND it's not empty
-				write(fd, &buffer[i + 1], strlen(&buffer[i + 1]));
-				write(fd, print0 ? "" : "\n", 1);
-			}
+	for (int i = 0; i < lines_count; i++) {
+		if (lines[i].selected != selected_invert && *lines[i].content != '\0') {    // is selected AND it's not empty
+			write(fd, lines[i].content, lines[i].length);
+			write(fd, print0 ? "" : "\n", 1);
 		}
 	}
 }
@@ -230,15 +230,14 @@ void runcommand(char** argv, bool print0) {
 	wait(NULL);          // Wait for the child process to finish
 }
 
-NORETURN void usage(int exitcode) {
+void usage(int exitcode) {
 	fprintf(stderr, USAGE, argv0);
 	exit(exitcode);
 }
 
 int main(int argc, char* argv[]) {
-	char* output     = NULL;
-	bool  keep_empty = false;
-	bool  print0     = false;
+	char* output = NULL;
+	bool  print0 = false;
 
 	argv0 = argv[0];
 	ARGBEGIN
@@ -269,8 +268,12 @@ int main(int argc, char* argv[]) {
 		usage(1);
 	}
 
-	loadfile(argv[0], keep_empty);
+	char*  buffer;
+	int maxlines;
+	size_t buffer_size = loadfile(argv[0], &buffer, &maxlines);
 	SHIFT;
+
+	splitbuffer(buffer, buffer_size, maxlines);
 
 	handlescreen();
 
@@ -291,7 +294,7 @@ int main(int argc, char* argv[]) {
 	}
 
 	free(buffer);
-	free(selected);
+	free(lines);
 
 	return 0;
 }
