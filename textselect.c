@@ -21,8 +21,8 @@ static void          drawscreen(void);
 static void          handlescreen(void);
 static void          help(void);
 static void          loadfile(const char* filename, bool keep_empty);
-static void          printselected(int fd);
-static void          runcommand(char** argv);
+static void          printselected(int fd, bool print0);
+static void          runcommand(char** argv, bool print0);
 static NORETURN void usage(int exitcode);
 
 static char*  argv0           = NULL;
@@ -50,7 +50,7 @@ char* buffer_getline(size_t line) {
 	for (size_t i = 0; i < buffer_size; i++) {
 		if (buffer[i] == '\0') {
 			current++;
-			if (current == line) 
+			if (current == line)
 				return &buffer[i + 1];
 		}
 	}
@@ -132,7 +132,7 @@ void help(void) {
 	        "Options:\n"
 	        "  -h              Display this help message and exit\n"
 	        "  -v              Invert the selection of lines\n"
-			"  -n              Keep empty lines which are not selectable\n"
+	        "  -n              Keep empty lines which are not selectable\n"
 	        "  -o output       Specify an output file to save the selected lines\n"
 	        "\n"
 	        "Navigation and selection keys:\n"
@@ -177,21 +177,24 @@ void loadfile(const char* filename, bool keep_empty) {
 	if (selected == NULL) die("unable to allocate selected-lines");
 }
 
-void printselected(int fd) {
+void printselected(int fd, bool print0) {
 	size_t current = 0;
-	if (selected[0] != selected_invert && buffer[0] != '\0') // is selected AND it's not empty
-		dprintf(fd, "%s\n", buffer);
-
+	if (selected[0] != selected_invert && buffer[0] != '\0') {   // is selected AND it's not empty
+		write(fd, buffer, strlen(buffer));
+		write(fd, print0 ? "" : "\n", 1);
+	}
 	for (size_t i = 0; i < buffer_size; i++) {
 		if (buffer[i] == '\0') {
 			current++;
-			if (selected[current] != selected_invert && buffer[i + 1] != '\0') // is selected AND it's not empty
-				dprintf(fd, "%s\n", &buffer[i + 1]);
+			if (selected[current] != selected_invert && buffer[i + 1] != '\0') {   // is selected AND it's not empty
+				write(fd, &buffer[i + 1], strlen(&buffer[i + 1]));
+				write(fd, print0 ? "" : "\n", 1);
+			}
 		}
 	}
 }
 
-void runcommand(char** argv) {
+void runcommand(char** argv, bool print0) {
 	int   pipefd[2];
 	pid_t pid;
 
@@ -205,11 +208,11 @@ void runcommand(char** argv) {
 		close(pipefd[1]);                 // Close write end of the pipe
 		dup2(pipefd[0], STDIN_FILENO);    // Redirect stdin to read end of the pipe
 		execvp(argv[0], argv);
-		die("unable to execute child");       // If execvp fails
+		die("unable to execute child");    // If execvp fails
 	}
 
 	close(pipefd[0]);    // Close read end of the pipe
-	printselected(pipefd[1]);
+	printselected(pipefd[1], print0);
 	close(pipefd[1]);    // Close write end after writing
 	wait(NULL);          // Wait for the child process to finish
 }
@@ -220,8 +223,9 @@ NORETURN void usage(int exitcode) {
 }
 
 int main(int argc, char* argv[]) {
-	char* output = NULL;
-	bool keep_empty = false;
+	char* output     = NULL;
+	bool  keep_empty = false;
+	bool  print0     = false;
 
 	argv0 = argv[0];
 	ARGBEGIN
@@ -237,6 +241,9 @@ int main(int argc, char* argv[]) {
 			break;
 		case 'o':
 			output = EARGF(usage(1));
+			break;
+		case '0':    // null
+			print0 = true;
 			break;
 		default:
 			fprintf(stderr, "error: unknown option '-%c'\n", OPT);
@@ -258,16 +265,16 @@ int main(int argc, char* argv[]) {
 		int fd;
 
 		fd = open(output, O_WRONLY | O_TRUNC | O_CREAT, 0664);
-		if (fd == -1) 
+		if (fd == -1)
 			die("unable to open output-file");
 
-		printselected(fd);
+		printselected(fd, print0);
 	}
 
 	if (argc == 0) {
-		printselected(STDOUT_FILENO);
+		printselected(STDOUT_FILENO, print0);
 	} else {
-		runcommand(argv);
+		runcommand(argv, print0);
 	}
 
 	free(buffer);
