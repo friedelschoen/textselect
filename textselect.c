@@ -14,28 +14,27 @@
 #define NORETURN __attribute__((noreturn))
 
 
-void          buffer_grow(void);
-char*         buffer_getline(size_t line);
-void          die(const char* message);
-void          drawscreen(void);
-void          execute(char** argv);
-void          handlescreen(void);
-void          help(void);
-void          loadfile(const char* filename);
-void          printselected(int fd);
-void          runcommand_pipe(char** argv);
-NORETURN void usage(int exitcode);
+static void          buffer_grow(void);
+static char*         buffer_getline(size_t line);
+static void          die(const char* message);
+static void          drawscreen(void);
+static void          handlescreen(void);
+static void          help(void);
+static void          loadfile(const char* filename);
+static void          printselected(int fd);
+static void          runcommand_pipe(char** argv);
+static NORETURN void usage(int exitcode);
 
-char*  argv0           = NULL;
-char*  buffer          = NULL;
-size_t buffer_size     = 0;
-size_t buffer_alloc    = 0;
-int    buffer_lines    = 0;
-int    current_line    = 0;
-int    head_line       = 0;
-int    height          = 0;
-bool*  selected        = NULL;
-bool   selected_invert = false;
+static char*  argv0           = NULL;
+static char*  buffer          = NULL;
+static size_t buffer_size     = 0;
+static size_t buffer_alloc    = 0;
+static int    buffer_lines    = 0;
+static int    current_line    = 0;
+static int    head_line       = 0;
+static int    height          = 0;
+static bool*  selected        = NULL;
+static bool   selected_invert = false;
 
 void buffer_grow(void) {
 	char* newbuffer;
@@ -63,13 +62,20 @@ void die(const char* message) {
 }
 
 void drawscreen(void) {
+	height = getmaxy(stdscr);
+
 	werase(stdscr);
 	for (int i = 0; i < height && (head_line + i) < buffer_lines; i++) {
-		if ((head_line + i) == current_line) wattron(stdscr, A_REVERSE);
-		if (selected[head_line + i] != selected_invert) wattron(stdscr, A_BOLD);
+		if ((head_line + i) == current_line)
+			wattron(stdscr, A_REVERSE);
+		if (selected[head_line + i] != selected_invert)
+			wattron(stdscr, A_BOLD);
+
 		mvwprintw(stdscr, i, 0, "%s", buffer_getline(head_line + i));
+
 		wattroff(stdscr, A_REVERSE | A_BOLD);
 	}
+
 	wrefresh(stdscr);
 }
 
@@ -80,8 +86,6 @@ void handlescreen(void) {
 	cbreak();
 	noecho();
 	keypad(stdscr, TRUE);
-
-	height = getmaxy(stdscr);
 
 	drawscreen();
 
