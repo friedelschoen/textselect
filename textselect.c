@@ -1,5 +1,6 @@
 #include "arg.h"
 
+#include <errno.h>
 #include <fcntl.h>
 #include <ncurses.h>
 #include <stdio.h>
@@ -8,8 +9,10 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-#define READBUFFER 512
+#define READBUFFER 1024
 #define BUFFERGROW 512
+
+#define USAGE "Usage: %s [-hnv0] [-o output] <input> [command ...]\n"
 
 #define NORETURN __attribute__((noreturn))
 
@@ -58,12 +61,13 @@ char* buffer_getline(size_t line) {
 }
 
 void die(const char* message) {
-	perror(message);
+	fprintf(stderr, "error: %s: %s\n", message, strerror(errno));
 	exit(EXIT_FAILURE);
 }
 
 void drawscreen(void) {
-	height = getmaxy(stdscr);
+	char* line;
+	int width = getmaxx(stdscr);
 
 	werase(stdscr);
 	for (int i = 0; i < height && (head_line + i) < buffer_lines; i++) {
@@ -72,7 +76,12 @@ void drawscreen(void) {
 		if (selected[head_line + i] != selected_invert)
 			wattron(stdscr, A_BOLD);
 
-		mvwprintw(stdscr, i, 0, "%s", buffer_getline(head_line + i));
+		line = buffer_getline(head_line + i);
+		if ((int) strlen(line) > width) {
+			mvwprintw(stdscr, i, 0, "%.*s...",  width-3, line);
+		} else {
+			mvwprintw(stdscr, i, 0, "%s", line);
+		}
 
 		wattroff(stdscr, A_REVERSE | A_BOLD);
 	}
@@ -88,9 +97,12 @@ void handlescreen(void) {
 	noecho();
 	keypad(stdscr, TRUE);
 
+	height = getmaxy(stdscr);
 	drawscreen();
 
 	while (!quit) {
+		height = getmaxy(stdscr);
+	
 		switch (getch()) {
 			case KEY_UP:
 			case KEY_LEFT:
@@ -126,7 +138,7 @@ void handlescreen(void) {
 
 void help(void) {
 	fprintf(stderr,
-	        "Usage: %s [-hv] [-o output] <input> [command [args...]]\n"
+	        USAGE
 	        "Interactively select lines from a text file and optionally execute a command with the selected lines.\n"
 	        "\n"
 	        "Options:\n"
@@ -134,6 +146,7 @@ void help(void) {
 	        "  -v              Invert the selection of lines\n"
 	        "  -n              Keep empty lines which are not selectable\n"
 	        "  -o output       Specify an output file to save the selected lines\n"
+			"  -0              Print selected lines demilited by NUL-character\n"
 	        "\n"
 	        "Navigation and selection keys:\n"
 	        "  UP, LEFT        Move the cursor up\n"
@@ -179,14 +192,14 @@ void loadfile(const char* filename, bool keep_empty) {
 
 void printselected(int fd, bool print0) {
 	size_t current = 0;
-	if (selected[0] != selected_invert && buffer[0] != '\0') {   // is selected AND it's not empty
+	if (selected[0] != selected_invert && buffer[0] != '\0') {    // is selected AND it's not empty
 		write(fd, buffer, strlen(buffer));
 		write(fd, print0 ? "" : "\n", 1);
 	}
 	for (size_t i = 0; i < buffer_size; i++) {
 		if (buffer[i] == '\0') {
 			current++;
-			if (selected[current] != selected_invert && buffer[i + 1] != '\0') {   // is selected AND it's not empty
+			if (selected[current] != selected_invert && buffer[i + 1] != '\0') {    // is selected AND it's not empty
 				write(fd, &buffer[i + 1], strlen(&buffer[i + 1]));
 				write(fd, print0 ? "" : "\n", 1);
 			}
@@ -218,7 +231,7 @@ void runcommand(char** argv, bool print0) {
 }
 
 NORETURN void usage(int exitcode) {
-	fprintf(stderr, "Usage: %s [-hv] [-o output] <input> [command ...]\n", argv0);
+	fprintf(stderr, USAGE, argv0);
 	exit(exitcode);
 }
 
