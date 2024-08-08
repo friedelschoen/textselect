@@ -18,32 +18,52 @@
 
 
 struct line {
-	char* content;
+	char *content;
 	int   length;
 	bool  selected;
 };
 
-static void   die(const char* message) NORETURN;
-static void   drawscreen(int height, int current_line, int head_line, struct line* lines, int lines_count);
-static void   handlescreen(struct line* lines, int lines_count);
-static void   help(void);
-static size_t loadfile(const char* filename, char** buffer, int* lines);
-static void   printselected(int fd, bool print0, struct line* lines, int lines_count);
-static int    splitbuffer(char* buffer, size_t size, int maxlines, struct line** lines);
-static pid_t  runcommand(char** argv, int* fd);
-static void   usage(int exitcode) NORETURN;
 
-
-static char* argv0           = NULL;
+static char *argv0           = NULL;
 static bool  selected_invert = false;
 static bool  keep_empty      = false;
 
-void die(const char* message) {
+static void die(const char *message) {
 	fprintf(stderr, "error: %s: %s\n", message, strerror(errno));
 	exit(EXIT_FAILURE);
 }
 
-void drawscreen(int height, int current_line, int head_line, struct line* lines, int lines_count) {
+static void help(void) {
+	fprintf(stderr,
+	        USAGE
+	        "Interactively select lines from a text file and optionally execute a command with the selected lines.\n"
+	        "\n"
+	        "Options:\n"
+	        "  -h              Display this help message and exit\n"
+	        "  -v              Invert the selection of lines\n"
+	        "  -n              Keep empty lines which are not selectable\n"
+	        "  -o output       Specify an output file to save the selected lines\n"
+	        "  -0              Print selected lines demilited by NUL-character\n"
+	        "\n"
+	        "Navigation and selection keys:\n"
+	        "  UP, LEFT        Move the cursor up\n"
+	        "  DOWN, RIGHT     Move the cursor down\n"
+	        "  v               Invert the selection of lines\n"
+	        "  SPACE           Select or deselect the current line\n"
+	        "  ENTER, q        Quit the selection interface\n"
+	        "\n"
+	        "Examples:\n"
+	        "  textselect -o output.txt input.txt\n"
+	        "  textselect input.txt sort\n",
+	        argv0);
+}
+
+static void usage(int exitcode) {
+	fprintf(stderr, USAGE, argv0);
+	exit(exitcode);
+}
+
+static void drawscreen(int height, int current_line, int head_line, struct line *lines, int lines_count) {
 	int width = getmaxx(stdscr);
 
 	werase(stdscr);
@@ -66,7 +86,7 @@ void drawscreen(int height, int current_line, int head_line, struct line* lines,
 	wrefresh(stdscr);
 }
 
-void handlescreen(struct line* lines, int lines_count) {
+static void handlescreen(struct line *lines, int lines_count) {
 	bool quit         = false;
 	int  height       = 0;
 	int  current_line = 0;
@@ -116,37 +136,11 @@ void handlescreen(struct line* lines, int lines_count) {
 	endwin();
 }
 
-void help(void) {
-	fprintf(stderr,
-	        USAGE
-	        "Interactively select lines from a text file and optionally execute a command with the selected lines.\n"
-	        "\n"
-	        "Options:\n"
-	        "  -h              Display this help message and exit\n"
-	        "  -v              Invert the selection of lines\n"
-	        "  -n              Keep empty lines which are not selectable\n"
-	        "  -o output       Specify an output file to save the selected lines\n"
-	        "  -0              Print selected lines demilited by NUL-character\n"
-	        "\n"
-	        "Navigation and selection keys:\n"
-	        "  UP, LEFT        Move the cursor up\n"
-	        "  DOWN, RIGHT     Move the cursor down\n"
-	        "  v               Invert the selection of lines\n"
-	        "  SPACE           Select or deselect the current line\n"
-	        "  ENTER, q        Quit the selection interface\n"
-	        "\n"
-	        "Examples:\n"
-	        "  textselect -o output.txt input.txt\n"
-	        "  textselect input.txt sort\n",
-	        argv0);
-}
-
-size_t loadfile(const char* filename, char** buffer, int* lines) {
+static size_t loadfile(const char *filename, char **buffer, int *lines) {
 	static char readbuf[READBUFFER];
 	ssize_t     nread;
+	size_t      alloc = 0, size = 0;
 	int         fd;
-	size_t      alloc = 0;
-	size_t      size  = 0;
 
 	*buffer = NULL;
 	*lines  = 1;
@@ -177,16 +171,13 @@ size_t loadfile(const char* filename, char** buffer, int* lines) {
 	return size;
 }
 
-int splitbuffer(char* buffer, size_t size, int maxlines, struct line** lines) {
-	int count = 0;
+static int splitbuffer(char *buffer, size_t size, int maxlines, struct line **lines) {
+	int count = 0, start = 0;
 
-	printf("maxlines: %d\n", maxlines);
 	(*lines) = calloc(maxlines, sizeof(struct line));
 	if (*lines == NULL)
 		die("unable to allocate line-mapping");
 
-	int start                  = 0;
-	count                      = 0;
 	(*lines)[count].content    = buffer;
 	(*lines)[count++].selected = false;
 	for (size_t i = 0; i < size; i++) {
@@ -202,7 +193,7 @@ int splitbuffer(char* buffer, size_t size, int maxlines, struct line** lines) {
 	return count;
 }
 
-void printselected(int fd, bool print0, struct line* lines, int lines_count) {
+static void printselected(int fd, bool print0, struct line *lines, int lines_count) {
 	for (int i = 0; i < lines_count; i++) {
 		if (lines[i].selected != selected_invert && *lines[i].content != '\0') {    // is selected AND it's not empty
 			write(fd, lines[i].content, lines[i].length);
@@ -211,7 +202,7 @@ void printselected(int fd, bool print0, struct line* lines, int lines_count) {
 	}
 }
 
-pid_t runcommand(char** argv, int* destfd) {
+static pid_t runcommand(char **argv, int *destfd) {
 	int   pipefd[2];
 	pid_t pid;
 
@@ -229,21 +220,17 @@ pid_t runcommand(char** argv, int* destfd) {
 	}
 
 	close(pipefd[0]);    // Close read end of the pipe
-	// close(pipefd[1]);    // Close write end after writing
-	// wait(NULL);          // Wait for the child process to finish
 
 	*destfd = pipefd[1];
 	return pid;
 }
 
-void usage(int exitcode) {
-	fprintf(stderr, USAGE, argv0);
-	exit(exitcode);
-}
-
-int main(int argc, char* argv[]) {
-	char* output = NULL;
-	bool  print0 = false;
+int main(int argc, char *argv[]) {
+	char        *buffer, *input, *output = NULL;
+	bool         print0 = false;
+	int          lines_count, cmdfd;
+	struct line *lines;
+	size_t       buffer_size;
 
 	argv0 = argv[0];
 	ARGBEGIN
@@ -274,14 +261,10 @@ int main(int argc, char* argv[]) {
 		usage(1);
 	}
 
-	char*        buffer;
-	int          maxlines;
-	int          lines_count;
-	struct line* lines;
-	size_t       buffer_size = loadfile(argv[0], &buffer, &maxlines);
+	input = argv[0];
 	SHIFT;
-
-	lines_count = splitbuffer(buffer, buffer_size, maxlines, &lines);
+	buffer_size = loadfile(input, &buffer, &lines_count);
+	lines_count = splitbuffer(buffer, buffer_size, lines_count, &lines);
 
 	handlescreen(lines, lines_count);
 
@@ -298,10 +281,9 @@ int main(int argc, char* argv[]) {
 	if (argc == 0) {
 		printselected(STDOUT_FILENO, print0, lines, lines_count);
 	} else {
-		int   fd;
-		pid_t pid = runcommand(argv, &fd);
-		printselected(fd, print0, lines, lines_count);
-		close(fd);
+		pid_t pid = runcommand(argv, &cmdfd);
+		printselected(cmdfd, print0, lines, lines_count);
+		close(cmdfd);
 		waitpid(pid, NULL, 0);
 	}
 

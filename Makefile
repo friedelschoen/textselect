@@ -1,13 +1,13 @@
-CFLAGS += -O2 -Wall -Wextra -Wpedantic -g
+CFLAGS += -g -std=c99 -O2 -Wall -Wextra -Wpedantic
 LDFLAGS += -lncurses
-PREFIX = /usr
+PREFIX ?= /usr
 
 .PHONY: all install clean
 
 all: textselect
 
 textselect.o: textselect.c arg.h
-	$(CC) -c $< -o $@ $(CFLAGS) $(CPPFLAGS)
+	$(CC) -c $(CFLAGS) $(CPPFLAGS) -o $@ $<
 
 textselect: textselect.o
 	$(CC) $< -o $@ $(LDFLAGS)
