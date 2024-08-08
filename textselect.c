@@ -24,26 +24,26 @@ struct line {
 };
 
 static void   die(const char* message) NORETURN;
-static void   drawscreen(int height, int current_line, int head_line);
-static void   handlescreen(void);
+static void   drawscreen(int height, int current_line, int head_line, struct line* lines, int lines_count);
+static void   handlescreen(struct line* lines, int lines_count);
 static void   help(void);
 static size_t loadfile(const char* filename, char** buffer, int* lines);
-static void   printselected(int fd, bool print0);
-static void   runcommand(char** argv, bool print0);
+static void   printselected(int fd, bool print0, struct line* lines, int lines_count);
+static int    splitbuffer(char* buffer, size_t size, int maxlines, struct line** lines);
+static pid_t  runcommand(char** argv, int* fd);
 static void   usage(int exitcode) NORETURN;
 
-static struct line* lines           = NULL;
-static int          lines_count     = 0;
-static char*        argv0           = NULL;
-static bool         selected_invert = false;
-static bool         keep_empty      = false;
+
+static char* argv0           = NULL;
+static bool  selected_invert = false;
+static bool  keep_empty      = false;
 
 void die(const char* message) {
 	fprintf(stderr, "error: %s: %s\n", message, strerror(errno));
 	exit(EXIT_FAILURE);
 }
 
-void drawscreen(int height, int current_line, int head_line) {
+void drawscreen(int height, int current_line, int head_line, struct line* lines, int lines_count) {
 	int width = getmaxx(stdscr);
 
 	werase(stdscr);
@@ -66,7 +66,7 @@ void drawscreen(int height, int current_line, int head_line) {
 	wrefresh(stdscr);
 }
 
-void handlescreen(void) {
+void handlescreen(struct line* lines, int lines_count) {
 	bool quit         = false;
 	int  height       = 0;
 	int  current_line = 0;
@@ -78,7 +78,7 @@ void handlescreen(void) {
 	keypad(stdscr, TRUE);
 
 	height = getmaxy(stdscr);
-	drawscreen(height, current_line, head_line);
+	drawscreen(height, current_line, head_line, lines, lines_count);
 
 	while (!quit) {
 		height = getmaxy(stdscr);
@@ -110,7 +110,7 @@ void handlescreen(void) {
 			case 'q':
 				quit = true;
 		}
-		drawscreen(height, current_line, head_line);
+		drawscreen(height, current_line, head_line, lines, lines_count);
 	}
 
 	endwin();
@@ -149,7 +149,7 @@ size_t loadfile(const char* filename, char** buffer, int* lines) {
 	size_t      size  = 0;
 
 	*buffer = NULL;
-	*lines = 1;
+	*lines  = 1;
 
 	if ((fd = open(filename, O_RDONLY)) == -1)
 		die("unable to open input-file");
@@ -177,28 +177,32 @@ size_t loadfile(const char* filename, char** buffer, int* lines) {
 	return size;
 }
 
-void splitbuffer(char* buffer, size_t size, int maxlines) {
+int splitbuffer(char* buffer, size_t size, int maxlines, struct line** lines) {
+	int count = 0;
+
 	printf("maxlines: %d\n", maxlines);
-	lines = calloc(maxlines, sizeof(struct line));
-	if (lines == NULL)
+	(*lines) = calloc(maxlines, sizeof(struct line));
+	if (*lines == NULL)
 		die("unable to allocate line-mapping");
 
-	int start                    = 0;
-	lines_count                  = 0;
-	lines[lines_count].content = buffer;
-	lines[lines_count++].selected = false;
+	int start                  = 0;
+	count                      = 0;
+	(*lines)[count].content    = buffer;
+	(*lines)[count++].selected = false;
 	for (size_t i = 0; i < size; i++) {
 		if (buffer[i] == '\0' && (keep_empty || buffer[i - 1] != '\0')) {
-			lines[lines_count - 1].length = i - start;
-			lines[lines_count].content  = &buffer[i + 1];
-			lines[lines_count++].selected = false;
-			start                         = i + 1;
+			(*lines)[count - 1].length = i - start;
+			(*lines)[count].content    = &buffer[i + 1];
+			(*lines)[count++].selected = false;
+			start                      = i + 1;
 		}
 	}
-	lines[lines_count - 1].length = size - start - 1;
+	(*lines)[count - 1].length = size - start - 1;
+
+	return count;
 }
 
-void printselected(int fd, bool print0) {
+void printselected(int fd, bool print0, struct line* lines, int lines_count) {
 	for (int i = 0; i < lines_count; i++) {
 		if (lines[i].selected != selected_invert && *lines[i].content != '\0') {    // is selected AND it's not empty
 			write(fd, lines[i].content, lines[i].length);
@@ -207,7 +211,7 @@ void printselected(int fd, bool print0) {
 	}
 }
 
-void runcommand(char** argv, bool print0) {
+pid_t runcommand(char** argv, int* destfd) {
 	int   pipefd[2];
 	pid_t pid;
 
@@ -225,9 +229,11 @@ void runcommand(char** argv, bool print0) {
 	}
 
 	close(pipefd[0]);    // Close read end of the pipe
-	printselected(pipefd[1], print0);
-	close(pipefd[1]);    // Close write end after writing
-	wait(NULL);          // Wait for the child process to finish
+	// close(pipefd[1]);    // Close write end after writing
+	// wait(NULL);          // Wait for the child process to finish
+
+	*destfd = pipefd[1];
+	return pid;
 }
 
 void usage(int exitcode) {
@@ -268,14 +274,16 @@ int main(int argc, char* argv[]) {
 		usage(1);
 	}
 
-	char*  buffer;
-	int maxlines;
-	size_t buffer_size = loadfile(argv[0], &buffer, &maxlines);
+	char*        buffer;
+	int          maxlines;
+	int          lines_count;
+	struct line* lines;
+	size_t       buffer_size = loadfile(argv[0], &buffer, &maxlines);
 	SHIFT;
 
-	splitbuffer(buffer, buffer_size, maxlines);
+	lines_count = splitbuffer(buffer, buffer_size, maxlines, &lines);
 
-	handlescreen();
+	handlescreen(lines, lines_count);
 
 	if (output != NULL) {
 		int fd;
@@ -284,13 +292,17 @@ int main(int argc, char* argv[]) {
 		if (fd == -1)
 			die("unable to open output-file");
 
-		printselected(fd, print0);
+		printselected(fd, print0, lines, lines_count);
 	}
 
 	if (argc == 0) {
-		printselected(STDOUT_FILENO, print0);
+		printselected(STDOUT_FILENO, print0, lines, lines_count);
 	} else {
-		runcommand(argv, print0);
+		int   fd;
+		pid_t pid = runcommand(argv, &fd);
+		printselected(fd, print0, lines, lines_count);
+		close(fd);
+		waitpid(pid, NULL, 0);
 	}
 
 	free(buffer);
