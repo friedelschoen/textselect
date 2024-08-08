@@ -6,8 +6,7 @@
 
 - Interactively select lines from a text file using a curses-based interface.
 - Save selected lines to an output file.
-- Execute commands with the selected lines as arguments.
-- Flexible options for command execution, including passing selected lines as arguments, replacing placeholders in commands, or executing commands for each selected line.
+- Execute commands with the selected lines as input.
 
 ## Installation
 
@@ -17,19 +16,22 @@ To build `textselect` from source, you'll need a C compiler and the `ncurses` li
 git clone https://github.com/friedelschoen/textselect.git
 cd textselect
 make
+make PREFIX=... install
 ```
 
 ## Usage
 
 ```sh
-textselect [-hvxil] [-o output] <input> [command [args...]]
+textselect [-hnv0] [-o output] <input> [command [args...]]
 ```
 
 ### Options
 
 - `-h`: Display the help message and exit.
-- `-v`: Invert the selection of lines.
+- `-n`: Keep empty lines which are not selectable.
 - `-o output`: Specify an output file to save the selected lines.
+- `-v`: Invert the selection of lines.
+- `-0`: Print selected lines delimited by a NUL-character.
 
 ### Navigation and Selection Keys
 
@@ -42,22 +44,25 @@ textselect [-hvxil] [-o output] <input> [command [args...]]
 ### Examples
 
 ```sh
-# Interactively select lines from input.txt and save the selected lines to output.txt
-textselect -o output.txt input.txt
+# most simple example, select couple lines from a text-file and print it to the terminal afterwards
+textselect input.txt
 
-# Interactively select lines from input.txt and pass the selected lines as arguments to the sort command
-textselect input.txt sort
+# select couple lines from a text-file and save it to a text-file
+textselect -o output.txt
 
-# Interactively select lines from input.txt and execute the echo command for each selected line, replacing {} with the selected line
-textselect -i input.txt echo {}
+# select couple lines from a text-file and pass these to `lolcat` for some funny output
+textselect input.txt lolcat
 
-# Interactively select lines from input.txt and execute the echo command for each selected line
-textselect -l input.txt echo
+# select couple lines from a command and print it to the terminal afterwards (choosing from installed packages in Void Linux)
+textselect <(xbps-query -l)
+
+# select couple lines from a command and execute command with lines as arguments (removing unnecessary packages in Void Linux)
+textselect <(xbps-query -m) xargs xbps-remove
 ```
 
 ## License
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+This project is licensed under the zlib License. See the [LICENSE](LICENSE) file for details.
 
 ## Contributing
 

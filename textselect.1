@@ -3,7 +3,7 @@
 textselect \- Interactively select lines from a text file and optionally execute a command with the selected lines.
 .SH SYNOPSIS
 .B textselect
-.RB [ \-hvx ] 
+.RB [ \-hnv0 ] 
 .RB [ \-o \ output ]
 .I input
 .I [command [args...]]
@@ -15,11 +15,17 @@ allows users to interactively select lines from a text file. The selected lines 
 .B \-h
 Display this help message and exit.
 .TP
-.B \-v
-Invert the selection of lines.
+.B \-n
+Keep empty lines which are not selectable.
 .TP
 .B \-o \fIoutput\fR
 Specify an output file to save the selected lines.
+.TP
+.B \-v
+Invert the selection of lines.
+.TP
+.B \-0
+Print selected lines delimited by a NUL-character
 .SH NAVIGATION AND SELECTION KEYS
 .TP
 .B UP, LEFT
@@ -38,20 +44,22 @@ Select or deselect the current line.
 Quit the selection interface.
 .SH EXAMPLES
 .TP
-.B textselect \-o output.txt input.txt
-Interactively select lines from \fIinput.txt\fR and save the selected lines to \fIoutput.txt\fR.
+.B textselect input.txt
+most simple example, select couple lines from a text-file and print it to the terminal afterwards
 .TP
-.B textselect input.txt sort
-Interactively select lines from \fIinput.txt\fR and pass the selected lines as arguments to the \fBsort\fR command.
+.B textselect -o output.txt
+select couple lines from a text-file and save it to a text-file
 .TP
-.B textselect \-i input.txt echo \{\}
-Interactively select lines from \fIinput.txt\fR and execute the \fBecho\fR command for each selected line, replacing \{\} with the selected line.
+.B textselect input.txt lolcat
+select couple lines from a text-file and pass these to `lolcat` for some funny output
 .TP
-.B textselect \-l input.txt echo
-Interactively select lines from \fIinput.txt\fR and execute the \fBecho\fR command for each selected line.
+.B textselect <(xbps-query -l)
+select couple lines from a command and print it to the terminal afterwards (choosing from installed packages in Void Linux)
+.TP
+.B textselect <(xbps-query -m) xargs xbps-remove
+select couple lines from a command and execute command with lines as arguments (removing unnecessary packages in Void Linux)
 .SH SEE ALSO
-.BR sort (1),
-.BR echo (1)
+.BR xargs (1),
 .SH AUTHOR
 Written by Friedel Schon.
 .SH BUGS
