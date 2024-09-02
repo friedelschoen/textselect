@@ -11,10 +11,12 @@
 
 #define READBUFFER 1024
 #define BUFFERGROW 512
+#define PREFIX     16
 
 #define USAGE "Usage: %s [-hnv0] [-o output] <input> [command ...]\n"
 
-#define NORETURN __attribute__((noreturn))
+#define NORETURN  __attribute__((noreturn))
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
 
 
 struct line {
@@ -27,6 +29,10 @@ struct line {
 static char *argv0           = NULL;
 static bool  selected_invert = false;
 static bool  keep_empty      = false;
+
+static char selected[PREFIX]   = "";
+static char unselected[PREFIX] = "";
+static int  prefixlen          = 0;
 
 static void die(const char *message) {
 	fprintf(stderr, "error: %s: %s\n", message, strerror(errno));
@@ -42,6 +48,8 @@ static void help(void) {
 	        "  -h              Display this help message and exit\n"
 	        "  -n              Keep empty lines which are not selectable\n"
 	        "  -o output       Specify an output file to save the selected lines\n"
+	        "  -s              Characters prepend to a selected line\n"
+	        "  -S              Characters prepend to a unselected line\n"
 	        "  -v              Invert the selection of lines\n"
 	        "  -0              Print selected lines delimited by a NUL-character\n"
 	        "\n"
@@ -68,16 +76,21 @@ static void drawscreen(int height, int current_line, int head_line, struct line 
 
 	werase(stdscr);
 	for (int i = 0; i < height && i < lines_count - head_line; i++) {
+
+		if (lines[head_line + i].selected != selected_invert) {
+			mvwprintw(stdscr, i, 0, selected);
+			wattron(stdscr, A_BOLD);
+		} else {
+			mvwprintw(stdscr, i, 0, unselected);
+		}
+
 		if ((head_line + i) == current_line)
 			wattron(stdscr, A_REVERSE);
 
-		if (lines[head_line + i].selected != selected_invert)
-			wattron(stdscr, A_BOLD);
-
 		if (lines[head_line + i].length > width) {
-			mvwprintw(stdscr, i, 0, "%.*s...", width - 3, lines[head_line + i].content);
+			mvwprintw(stdscr, i, prefixlen, "%.*s...", width - 3, lines[head_line + i].content);
 		} else {
-			mvwprintw(stdscr, i, 0, "%s", lines[head_line + i].content);
+			mvwprintw(stdscr, i, prefixlen, "%s", lines[head_line + i].content);
 		}
 
 		wattroff(stdscr, A_REVERSE | A_BOLD);
@@ -225,6 +238,13 @@ static pid_t runcommand(char **argv, int *destfd) {
 	return pid;
 }
 
+static void alignspace(char *text) {
+	for (int i = strlen(text); i < prefixlen; i++) {
+		text[i] = ' ';
+	}
+	text[prefixlen] = '\0';
+}
+
 int main(int argc, char *argv[]) {
 	char        *buffer, *input, *output = NULL;
 	bool         print0 = false;
@@ -250,6 +270,14 @@ int main(int argc, char *argv[]) {
 		case '0':    // null
 			print0 = true;
 			break;
+		case 's':
+			strncpy(selected, EARGF(usage(1)), sizeof(selected));
+			selected[sizeof(selected)-1] = '\0';
+			break;
+		case 'S':
+			strncpy(unselected, EARGF(usage(1)), sizeof(unselected));
+			unselected[sizeof(unselected)-1] = '\0';
+			break;
 		default:
 			fprintf(stderr, "error: unknown option '-%c'\n", OPT);
 			usage(1);
@@ -263,6 +291,16 @@ int main(int argc, char *argv[]) {
 
 	input = argv[0];
 	SHIFT;
+
+	if (*selected || *unselected) {
+		int sellen = strlen(selected), unsellen = strlen(unselected);
+
+		prefixlen = MAX(sellen, unsellen) + 1;
+
+		alignspace(selected);
+		alignspace(unselected);
+	}
+
 	buffer_size = loadfile(input, &buffer, &lines_count);
 	lines_count = splitbuffer(buffer, buffer_size, lines_count, &lines);
 
