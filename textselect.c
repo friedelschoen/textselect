@@ -29,10 +29,9 @@ struct line {
 static char *argv0           = NULL;
 static bool  selected_invert = false;
 static bool  keep_empty      = false;
+static int   prefixlen       = 0;
 
-static char selected[PREFIX]   = "";
-static char unselected[PREFIX] = "";
-static int  prefixlen          = 0;
+#include "config.h"
 
 static void die(const char *message) {
 	fprintf(stderr, "error: %s: %s\n", message, strerror(errno));
@@ -272,11 +271,11 @@ int main(int argc, char *argv[]) {
 			break;
 		case 's':
 			strncpy(selected, EARGF(usage(1)), sizeof(selected));
-			selected[sizeof(selected)-1] = '\0';
+			selected[sizeof(selected) - 1] = '\0';
 			break;
 		case 'S':
 			strncpy(unselected, EARGF(usage(1)), sizeof(unselected));
-			unselected[sizeof(unselected)-1] = '\0';
+			unselected[sizeof(unselected) - 1] = '\0';
 			break;
 		default:
 			fprintf(stderr, "error: unknown option '-%c'\n", OPT);

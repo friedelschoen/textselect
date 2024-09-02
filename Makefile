@@ -6,7 +6,7 @@ PREFIX ?= /usr
 
 all: textselect
 
-textselect.o: textselect.c arg.h
+textselect.o: textselect.c arg.h config.h
 	$(CC) -c $(CFLAGS) $(CPPFLAGS) -o $@ $<
 
 textselect: textselect.o
