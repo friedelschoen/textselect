@@ -13,7 +13,7 @@
 #define BUFFERGROW 512
 #define PREFIX     16
 
-#define USAGE "Usage: %s [-hnv0] [-o output] <input> [command ...]\n"
+#define USAGE "Usage: %s [-hnsSv0] [-o output] <input> [command ...]\n"
 
 #define NORETURN  __attribute__((noreturn))
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
@@ -74,8 +74,11 @@ static void drawscreen(int height, int current_line, int head_line, struct line 
 	int width = getmaxx(stdscr);
 
 	werase(stdscr);
-	for (int i = 0; i < height && i < lines_count - head_line; i++) {
-
+	for (int i = 0; i < height; i++) {
+		if (i >= lines_count - head_line - 1) {
+			mvwprintw(stdscr, i, 0, "~");
+			continue;
+		}
 		if (lines[head_line + i].selected != selected_invert) {
 			mvwprintw(stdscr, i, 0, selected);
 			wattron(stdscr, A_BOLD);
@@ -119,15 +122,15 @@ static void handlescreen(struct line *lines, int lines_count) {
 			case KEY_UP:
 			case KEY_LEFT:
 				if (current_line > 0) {
-					(current_line)--;
+					current_line--;
 					if (current_line < head_line)
 						head_line--;
 				}
 				break;
 			case KEY_DOWN:
 			case KEY_RIGHT:
-				if (current_line < lines_count - 1) {
-					(current_line)++;
+				if (current_line < lines_count - 2) {
+					current_line++;
 					if (current_line >= head_line + height)
 						head_line++;
 				}
