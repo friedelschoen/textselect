@@ -80,10 +80,10 @@ static void drawscreen(int height, int current_line, int head_line, struct line 
 			continue;
 		}
 		if (lines[head_line + i].selected != selected_invert) {
-			mvwprintw(stdscr, i, 0, selected);
+			mvwprintw(stdscr, i, 0, "%s", selected);
 			wattron(stdscr, A_BOLD);
 		} else {
-			mvwprintw(stdscr, i, 0, unselected);
+			mvwprintw(stdscr, i, 0, "%s", unselected);
 		}
 
 		if ((head_line + i) == current_line)
