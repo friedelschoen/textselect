@@ -15,6 +15,8 @@ all: $(BINS)
 %: %.o
 	$(CC) $< -o $@ $(LDFLAGS)
 
+pipeto: CPPFLAGS += -D_GNU_SOURCE
+
 install: all
 	cp textselect $(PREFIX)/bin/
 	cp pipeto $(PREFIX)/bin/
