@@ -1,23 +1,29 @@
 #include "arg.h"
 
 #include <errno.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
-#define USAGE "Usage: %s [-h] [-d delimiter] <inputcmd> {delimiter} <outputcmd>\n"
+#define MAXCOMMANDS 8
 
-#define NORETURN  __attribute__((noreturn))
-#define MAX(a, b) ((a) > (b) ? (a) : (b))
+#define USAGE "Usage: %s [-h] [-d delimiter] <command args...> {delimiter} <command args...> [{delimiter} <command args...> ...]\n"
 
+static char *argv0     = NULL;
+static char *delimiter = "+";
 
-static char       *argv0     = NULL;
-static const char *delimiter = "+";
+static void die(const char *message, ...) {
+	va_list va;
+	va_start(va, message);
+	
+	fprintf(stderr, "%s: ", argv0);
+	vfprintf(stderr, message, va);
+	fprintf(stderr, ": %s\n", strerror(errno));
 
-static void die(const char *message) {
-	fprintf(stderr, "error: %s: %s\n", message, strerror(errno));
+	va_end(va);
 	exit(EXIT_FAILURE);
 }
 
@@ -40,54 +46,53 @@ static void usage(int exitcode) {
 	exit(exitcode);
 }
 
-static void runcommand(char **inputcmd, char **outputcmd) {
-	int   pipefd[2];    // pipefd[0] is for reading, pipefd[1] is for writing
-	pid_t pid1, pid2;
 
-	if (pipe(pipefd) == -1) {
-		perror("pipe");
-		exit(EXIT_FAILURE);
+static void runcommand(char ***commands, int num_cmds) {
+	int   pipefd[2];       // Pipe for communication between processes
+	int   prev_fd = -1;    // To store the read end of the previous pipe
+	pid_t pid;
+
+	for (int i = 0; i < num_cmds; i++) {
+		if (pipe(pipefd) == -1) {
+			die("unable to create pipe");
+		}
+
+		if ((pid = fork()) < 0) {
+			die("unable create new process");
+		}
+
+		if (pid == 0) {                         // Child process
+			if (prev_fd != -1) {                // If there's a previous pipe
+				dup2(prev_fd, STDIN_FILENO);    // Redirect input from previous pipe
+				close(prev_fd);
+			}
+			if (i != num_cmds - 1) {               // If this is not the last command
+				dup2(pipefd[1], STDOUT_FILENO);    // Redirect output to the current pipe
+			}
+			close(pipefd[0]);    // Close read end of the current pipe
+			close(pipefd[1]);    // Close write end of the current pipe
+
+			execvp(*commands[i], commands[i]);    // Execute the command
+			die("unable to execute command %s", *commands[i]);
+		}
+
+		// Parent process
+		close(pipefd[1]);    // Close write end of the current pipe
+		if (prev_fd != -1) {
+			close(prev_fd);    // Close the previous pipe's read end
+		}
+		prev_fd = pipefd[0];    // Save the read end of the current pipe
 	}
 
-	// First child process to run inputcmd
-	if ((pid1 = fork()) < 0) {
-		perror("fork");
-		exit(EXIT_FAILURE);
+	// Close any remaining pipe descriptors
+	if (prev_fd != -1) {
+		close(prev_fd);
 	}
 
-	if (pid1 == 0) {
-		// Child process 1: will exec inputcmd
-		close(pipefd[0]);                  // Close unused read end
-		dup2(pipefd[1], STDOUT_FILENO);    // Redirect stdout to pipe write end
-		close(pipefd[1]);                  // Close write end after dup
-
-		execvp(inputcmd[0], inputcmd);    // Replace child process with inputcmd
-		die("unable to execute input command");
+	// Wait for all children to finish
+	for (int i = 0; i < num_cmds; i++) {
+		wait(NULL);
 	}
-
-	// Second child process to run outputcmd
-	if ((pid2 = fork()) < 0) {
-		perror("fork");
-		exit(EXIT_FAILURE);
-	}
-
-	if (pid2 == 0) {
-		// Child process 2: will exec outputcmd
-		close(pipefd[1]);                 // Close unused write end
-		dup2(pipefd[0], STDIN_FILENO);    // Redirect stdin to pipe read end
-		close(pipefd[0]);                 // Close read end after dup
-
-		execvp(outputcmd[0], outputcmd);    // Replace child process with outputcmd
-		die("unable to execute output command");
-	}
-
-	// Parent process
-	close(pipefd[0]);    // Close both ends of the pipe in the parent
-	close(pipefd[1]);
-
-	// Wait for both children to finish
-	waitpid(pid1, NULL, 0);
-	waitpid(pid2, NULL, 0);
 }
 
 int main(int argc, char *argv[]) {
@@ -111,20 +116,18 @@ int main(int argc, char *argv[]) {
 		usage(1);
 	}
 
-	char **outputcmd = NULL;
-
+	char **commands[MAXCOMMANDS];
+	int    ncommands      = 0;
+	commands[ncommands++] = argv;
 	for (int i = 0; i < argc; i++) {
 		if (!strcmp(argv[i], delimiter)) {
-			if (outputcmd) {
-				fprintf(stderr, "error: delimiter occured more than once\n");
-				exit(EXIT_FAILURE);
-			}
-			argv[i]   = NULL;
-			outputcmd = &argv[i + 1];
+			argv[i] = NULL;
+
+			commands[ncommands++] = &argv[i + 1];    // Start of the next command
 		}
 	}
 
-	runcommand(argv, outputcmd);
+	runcommand(commands, ncommands);
 
 	return 0;
 }
